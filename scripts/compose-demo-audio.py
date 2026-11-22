@@ -1,4 +1,4 @@
-"""Recreate the journal's original demo scores with Python 3 and FFmpeg."""
+"""Recreate the six synthesized demo scores in public/samples with Python 3 and FFmpeg."""
 
 import math
 import shutil
@@ -8,7 +8,7 @@ import wave
 from array import array
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "public" / "memories"
+ROOT = Path(__file__).resolve().parents[1] / "public" / "samples"
 RATE = 22050
 DURATION = 28
 THEMES = {
@@ -16,7 +16,7 @@ THEMES = {
     "city": (132, (46, 53, 56, 62), 0.77),
     "morning": (60, (60, 64, 67, 74), 0.18),
     "forest": (67, (50, 55, 57, 62), 0.25),
-    "tide": (80, (55, 59, 62, 69), 0.31),
+    "tide": (118, (55, 59, 62, 69), 0.66),
     "train": (98, (48, 51, 55, 62), 0.38),
 }
 

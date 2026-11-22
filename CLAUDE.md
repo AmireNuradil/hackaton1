@@ -1,18 +1,9 @@
-# Afterimage project instructions
+# Тон дня — project instructions
 
-Afterimage is the ArtTech entry for **Make the Invisible Visible**. The browser app turns a journal entry, photos, and music into a replayable scene. The submission demonstrates how the same day can feel different when its soundtrack changes.
+Тон дня is the team's ArtTech entry for **Make the Invisible Visible** (brief: `docs/ARTTECH-BRIEF-RU.txt`). A static browser app turns a day's text, photos and song into an animated 4:5 diary page through explicit rules, and saves a day folder.
 
-## Start here
-
-- Read [the handoff](arttech-handoff/HANDOFF.md) for the architecture, decisions, evidence, and known limits. The [ArtTech brief](arttech-handoff/ARTTECH-BRIEF-RU.txt) and [submission design note](SUBMISSION.md) supply the judging context.
-- Use [the continuation prompt](arttech-handoff/PROMPT.md) to start the first coding task. [The task spec](arttech-handoff/CLAUDE-TASK.txt) defines acceptance for soundtrack preview. Start implementation when the team asks for it, on a branch off `main`.
-- Use Node.js 22.12+ or Node.js 20.19+ on the Node 20 line. Run `npm ci`, `npm test`, and `npm run build`. Run `npm run dev` for development or `npm run preview` to exercise the build. For a repeatable Chromium check, see the smoke test in the handoff.
-
-## Working conventions
-
-- Claude Code leads implementation. Codex prepares images, art direction, and the spoken pitch. The team previews the draft PR on the PC and records from the approved commit.
-- Keep the app static and browser-local. The production build resolves assets relative to its deployment path. The demo supports an offline run with bundled fonts, photos and original scores.
-- Reuse `compose()` and preserve the stored `day` shape and existing archive entries. Keep preview state separate from the saved record. Exports use the saved version. Uploaded audio plays in the viewer, and an HTTPS song link opens the source service with the user's own pace and energy estimates used for composition.
-- Keep the editorial visual system, keyboard access, mobile layout, and reduced-motion behavior. Show design impact with a controlled comparison using the same text and photos.
-- Use the supplied fictional examples or approved team media when testing or recording. Personal entries stay in each browser's IndexedDB; the project repository holds code and consented demonstration materials.
-- Return the draft PR URL, exact commit, commands run, browser reproduction steps, and any blocked verification. Record a meaningful change in the handoff if it supersedes a previous decision or limitation.
+- Use Node.js 20.19+ or 22.12+. Run `npm ci`, `npm test`, `npm run build`; `npm run preview` then `node scripts/check-browser.mjs` (needs a global Playwright) for the end-to-end check.
+- Rules live in `src/system.js`; analysis in `src/text.js`, `src/photo.js`, `src/music.js`; painting in `src/render.js`. Keep analysis and rules free of DOM so Node tests cover them. Every visual decision must add a reason in `design.reasons`.
+- Keep the app static, offline-capable and browser-local. Do not add network APIs or store personal entries in the repository; sample media are fictional (ImageGen images, synthesized scores).
+- The UI and copy are Russian. Keep keyboard access, the phone layout (390 px, no horizontal scroll) and reduced-motion behaviour.
+- Update `SUBMISSION.md` when a rule, technique or limitation changes, and regenerate `examples/` with `node scripts/export-examples.mjs`.

@@ -1,142 +1,219 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Afterimage is a personal journal that turns the words, photos and music of a day into a memory you can replay.">
-    <meta name="theme-color" content="#faf7f0">
-    <title>Afterimage — The Memory Journal</title>
+    <meta name="description" content="Тон дня — личный дневник, который превращает текст, фото и песню одного дня в живую страницу с атмосферой этого дня.">
+    <meta name="theme-color" content="#f3eee4">
+    <title>Тон дня — дневник атмосферы</title>
   </head>
   <body>
-    <header class="site-header" id="top">
+    <a class="skip" href="#feed">К ленте дней</a>
+    <header class="site-header">
       <div class="shell header-inner">
-        <a class="wordmark" href="#top" aria-label="Afterimage home"><span class="mark" aria-hidden="true"></span>afterimage<span class="wordmark-dot">.</span></a>
-        <nav aria-label="Main navigation">
-          <a href="#archive" class="archive-link">Archive</a>
-          <button class="button primary new-memory" type="button"><span class="plus" aria-hidden="true"></span> New memory</button>
+        <a class="wordmark" href="#top" aria-label="Тон дня — на главную"><span class="mark" aria-hidden="true"></span>Тон дня</a>
+        <nav aria-label="Разделы">
+          <a href="#feed">Лента</a>
+          <a href="#system">Как это работает</a>
+          <button class="button primary new-day" type="button"><span aria-hidden="true">＋</span> Записать день</button>
         </nav>
       </div>
     </header>
-    <main class="shell">
-      <section aria-labelledby="journal-title" class="journal">
-        <div class="journal-header">
+
+    <main id="top">
+      <section class="hero shell" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="kicker">Личный дневник</p>
+          <h1 id="hero-title">Фото помнят, как выглядел день. <em>Здесь остаётся, как он ощущался.</em></h1>
+          <p class="lede">Напишите о дне, приложите фотографии и песню. Дневник прочитает настроение, услышит темп и лад музыки, возьмёт цвета снимков — и соберёт живую страницу в единой системе. Каждый день ложится в свою папку.</p>
+          <div class="hero-actions">
+            <button class="button primary new-day" type="button"><span aria-hidden="true">＋</span> Записать день</button>
+            <a class="button quiet" href="#feed">Листать дневник</a>
+          </div>
+        </div>
+        <figure class="hero-page" id="hero-page" tabindex="0" role="button" aria-label="Открыть последний день">
+          <div class="hero-stack">
+            <img class="hero-back two" id="hero-back-two" alt="" hidden>
+            <img class="hero-back one" id="hero-back-one" alt="" hidden>
+            <div class="page-frame"><canvas id="hero-canvas" width="1080" height="1350" aria-hidden="true"></canvas></div>
+          </div>
+          <figcaption id="hero-caption">Собираю страницы…</figcaption>
+        </figure>
+      </section>
+
+      <section id="feed" class="feed shell" aria-labelledby="feed-title">
+        <div class="section-head">
           <div>
-            <h1 id="journal-title">The memory journal<span>.</span></h1>
-            <p>Keep the feeling of a day.</p>
+            <h2 id="feed-title">Лента дней</h2>
+            <p id="feed-count" class="muted"></p>
           </div>
-          <p class="journal-date" id="journal-date"></p>
-        </div>
-        <div id="feature" class="feature" aria-live="polite"></div>
-      </section>
-      <section id="archive" class="archive" aria-labelledby="archive-title">
-        <div class="archive-header">
-          <div class="archive-heading">
-            <h2 id="archive-title">Archive</h2>
-            <span id="entry-count" class="entry-count"></span>
+          <div class="feed-tools">
+            <label class="search"><span class="sr-only">Поиск по записям</span><input id="feed-search" type="search" placeholder="Поиск: море, мама, дождь…" autocomplete="off"></label>
+            <label><span class="sr-only">Показать</span>
+              <select id="feed-filter">
+                <option value="all">Все дни</option>
+                <option value="mine">Мои дни</option>
+                <option value="samples">Примеры</option>
+              </select>
+            </label>
           </div>
-          <label class="filter-label">
-            <span class="sr-only">Filter memories</span>
-            <select id="entry-filter">
-              <option value="all">All memories</option>
-              <option value="mine">My memories</option>
-              <option value="examples">Sample memories</option>
-            </select>
-          </label>
         </div>
-        <div id="entries" class="entries"></div>
-        <p id="archive-status" class="archive-status" role="status" hidden></p>
+        <div id="technique-filter" class="chips" role="group" aria-label="Приём"></div>
+        <ol id="days" class="days" aria-live="polite"></ol>
+        <p id="feed-status" class="feed-status" role="status" hidden></p>
       </section>
-      <footer class="footer"><span class="mark" aria-hidden="true"></span><span>Memories you add stay in this browser.</span></footer>
+
+      <section id="system" class="system shell" aria-labelledby="system-title">
+        <div class="section-head"><h2 id="system-title">Как день становится страницей</h2></div>
+        <div class="diary-map">
+          <div id="diary-map"></div>
+          <div class="diary-map-copy">
+            <h3>Карта дневника</h3>
+            <p>Каждый день — точка на двух осях. <b>Окраска</b> складывается из слов записи, лада песни и теплоты фото. <b>Подвижность</b> — из слов действия, темпа и энергии песни. Зона, в которую попала точка, выбирает художественный приём; сильная ностальгия (кольцо вокруг точки) включает плёнку в любой зоне.</p>
+            <p class="muted">Нажмите на точку, чтобы открыть день. Поменяйте песню у дня в просмотре — и увидите, как точка переезжает в другую зону.</p>
+          </div>
+        </div>
+        <div class="system-grid">
+          <div>
+            <h3>Постоянное</h3>
+            <p class="muted">То, что делает ленту одним дневником.</p>
+            <ul id="constants" class="plain"></ul>
+            <h3>Как читаются вход­ные данные</h3>
+            <ul class="plain">
+              <li><b>Текст.</b> Слова настроения задают окраску (светлая ↔ тёмная) и подвижность (тихая ↔ быстрая); время суток, сезон, место и люди дают название в 3–7 слов по одному шаблону.</li>
+              <li><b>Фото.</b> Главные цвета (k-means), свет и теплота снимков становятся палитрой страницы; число фото — числом сцен.</li>
+              <li><b>Музыка.</b> В браузере измеряются темп (BPM), энергия, мажор или минор (хроматограмма и профили Крумхансла). Для ссылки — по описанию: темп, энергия, лад, жанр, год. Темп задаёт длину кадра в долях, энергия — силу мазка и пульса, лад — свет и насыщенность, год — плёночное зерно.</li>
+              <li><b>Голос.</b> Озвучка записи синтезируется с темпом и высотой голоса из тех же правил.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Меняется вместе с настроением</h3>
+            <p class="muted">Приём выбирается по двум осям — окраска и подвижность — и по ностальгии.</p>
+            <ol id="techniques" class="techniques"></ol>
+          </div>
+        </div>
+      </section>
+      <footer class="footer shell"><span class="mark" aria-hidden="true"></span><span>Ваши дни хранятся только в этом браузере. Сохраните папку дня, чтобы перенести её.</span></footer>
     </main>
 
     <dialog id="editor" class="dialog editor" aria-labelledby="editor-title">
-      <div class="dialog-heading">
-        <div>
-          <h2 id="editor-title">A new memory</h2>
-          <p>Start with something you remember about the day.</p>
+      <form id="entry-form" novalidate>
+        <div class="dialog-head">
+          <div><h2 id="editor-title">Новый день</h2><p class="muted">Расскажите, как он прошёл, — как близкому другу.</p></div>
+          <button class="icon-button close-editor" type="button" aria-label="Закрыть"><span aria-hidden="true">×</span></button>
         </div>
-        <button class="icon-button close-editor" aria-label="Close new memory" type="button"><span class="cross" aria-hidden="true"></span></button>
-      </div>
-      <form id="entry-form">
-        <div class="form-field">
-          <label for="memory-date">Date</label>
-          <input id="memory-date" name="date" type="date" required>
+        <div class="editor-grid">
+        <div class="editor-fields">
+        <div class="field"><label for="day-date">Дата</label><input id="day-date" type="date" required></div>
+        <div class="field">
+          <label for="day-text">Как прошёл день?</label>
+          <textarea id="day-text" rows="5" maxlength="3000" required placeholder="Погода, свет, запахи, звуки, кто был рядом, мелочи, которые запомнились…"></textarea>
         </div>
-        <div class="form-field">
-          <label for="entry-text">What happened?</label>
-          <textarea id="entry-text" name="text" maxlength="2400" rows="4" placeholder="The light at the window, the walk home, the song you kept playing…" required></textarea>
-        </div>
-        <div class="form-field">
-          <label for="entry-photos">Photos <small>1–6 images</small></label>
-          <input type="file" id="entry-photos" name="photos" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required>
-          <div id="photo-selection" class="photo-selection" hidden></div>
-        </div>
-        <fieldset class="form-field song-field">
-          <legend>Soundtrack</legend>
-          <div class="song-options" aria-label="Soundtrack source">
-            <label><input name="song-source" type="radio" value="upload" checked> Audio file</label>
-            <label><input name="song-source" type="radio" value="link"> Song link</label>
+        <div class="field">
+          <span class="field-label" id="photos-label">Фотографии <small>1–6, JPG, PNG или WebP</small></span>
+          <div class="picker">
+            <input id="day-photos" class="picker-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required aria-labelledby="photos-label photos-picked">
+            <label for="day-photos" class="button quiet picker-button">Выбрать фото</label>
+            <span id="photos-picked" class="picker-name">Файлы не выбраны</span>
           </div>
-          <div class="form-field" id="upload-group">
-            <label for="entry-audio" class="sr-only">Audio file</label>
-            <input id="entry-audio" name="audio" type="file" accept="audio/*" required>
-            <span class="field-note">MP3, WAV or OGG · up to 20 MB</span>
+          <div id="photo-preview" class="photo-preview" hidden></div>
+        </div>
+        <fieldset class="field song">
+          <legend>Песня дня</legend>
+          <div class="segmented" role="radiogroup" aria-label="Источник песни">
+            <label><input type="radio" name="song-source" value="file" checked> Аудиофайл</label>
+            <label><input type="radio" name="song-source" value="link"> Ссылка</label>
           </div>
-          <div id="link-group" hidden>
-            <div class="form-field">
-              <label for="song-link">Song URL</label>
-              <input id="song-link" name="song-link" type="url" placeholder="https://…" disabled required>
-              <span class="field-note">Describe how this song sounds. The link opens the track when you replay the memory.</span>
+          <div id="song-file-group" class="field">
+            <div class="picker">
+              <input id="song-file" class="picker-input" type="file" accept="audio/*" aria-label="Аудиофайл песни">
+              <label for="song-file" class="button quiet picker-button">Выбрать аудио</label>
+              <span id="song-picked" class="picker-name">Файл не выбран</span>
             </div>
-            <div class="field-row">
-              <div class="form-field">
-                <label for="song-tempo">Pace</label>
-                <select id="song-tempo" name="song-tempo" disabled required>
-                  <option value="">Choose a pace</option><option value="62">Slow</option><option value="94">Steady</option><option value="146">Fast</option>
-                </select>
-              </div>
-              <div class="form-field">
-                <label for="song-energy">Energy</label>
-                <select id="song-energy" name="song-energy" disabled required>
-                  <option value="">Choose a level</option><option value="0.25">Soft</option><option value="0.55">Full</option><option value="0.87">Intense</option>
-                </select>
-              </div>
+            <span class="note">Темп, энергия и лад будут измерены в браузере. До 25 МБ.</span>
+          </div>
+          <div id="song-link-group" hidden>
+            <div class="field"><label for="song-link">Ссылка на песню</label><input id="song-link" type="url" placeholder="https://music.yandex.ru/…" inputmode="url"></div>
+            <p class="note">Песня откроется в музыкальном сервисе. Опишите, как она звучит, — описание заменит анализ аудио.</p>
+            <div class="row3">
+              <div class="field"><label for="song-pace">Темп</label><select id="song-pace"><option value="">—</option><option value="slow">Медленный</option><option value="medium">Средний</option><option value="fast">Быстрый</option></select></div>
+              <div class="field"><label for="song-energy">Энергия</label><select id="song-energy"><option value="">—</option><option value="soft">Тихая</option><option value="full">Полная</option><option value="intense">Мощная</option></select></div>
+              <div class="field"><label for="song-mode">Лад</label><select id="song-mode"><option value="">Не знаю</option><option value="major">Светлый (мажор)</option><option value="minor">Грустный (минор)</option></select></div>
             </div>
+          </div>
+          <div class="row3">
+            <div class="field wide"><label for="song-title">Исполнитель и название <small>необязательно</small></label><input id="song-title" type="text" maxlength="120" placeholder="Frank Sinatra — Autumn in New York"></div>
+            <div class="field"><label for="song-genre">Жанр</label><select id="song-genre"><option value="">—</option></select></div>
+            <div class="field"><label for="song-year">Год</label><input id="song-year" type="number" min="1900" max="2030" placeholder="1957"></div>
           </div>
         </fieldset>
-        <p id="form-error" role="alert" class="form-error" hidden></p>
-        <div class="form-actions">
-          <button class="button quiet close-editor" type="button">Cancel</button>
-          <button id="create-memory" type="submit" class="button primary">Create memory</button>
+        </div>
+        <aside class="live" aria-labelledby="live-title">
+          <p class="kicker" id="live-title">Так дневник прочитает день</p>
+          <p class="live-folder"><span class="folder-icon" aria-hidden="true"></span><span id="live-folder">Название появится, когда вы начнёте писать</span></p>
+          <div id="live-map" class="live-map"></div>
+          <dl class="live-readout">
+            <dt>Текст</dt><dd id="live-text">—</dd>
+            <dt>Фото</dt><dd id="live-photo">—</dd>
+            <dt>Песня</dt><dd id="live-music">—</dd>
+            <dt>Приём</dt><dd id="live-technique">—</dd>
+          </dl>
+        </aside>
+        </div>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <p id="form-progress" class="form-progress" role="status" hidden></p>
+        <div class="dialog-actions">
+          <button class="button quiet close-editor" type="button">Отмена</button>
+          <button id="create-day" class="button primary" type="submit">Собрать страницу дня</button>
         </div>
       </form>
     </dialog>
 
     <dialog id="viewer" class="dialog viewer" aria-labelledby="viewer-title">
-      <div class="viewer-heading">
-        <time id="viewer-date"></time>
-        <button id="close-viewer" class="icon-button" aria-label="Close memory" type="button"><span class="cross" aria-hidden="true"></span></button>
-      </div>
-      <div id="scene" class="scene" aria-label="Memory scene">
-        <div id="shot-images" class="shot-images"></div>
-        <div class="scene-tint"></div>
-        <div class="scene-caption"><h2 id="viewer-title"></h2><p id="scene-phrase"></p></div>
-        <div id="scene-progress" class="scene-progress" aria-hidden="true"></div>
-      </div>
-      <div class="viewer-tools">
-        <div class="viewer-playback">
-          <button id="play-scene" class="button primary" type="button"><span class="play" aria-hidden="true"></span><span id="play-label">Play memory</span></button>
-          <button id="sound-toggle" type="button" class="button quiet" aria-pressed="false" hidden>Mute</button>
-          <a id="song-open" class="button quiet" href="#" target="_blank" rel="noopener noreferrer" hidden>Open song <span aria-hidden="true">↗</span></a>
+      <div class="viewer-layout">
+        <div class="viewer-stage" id="viewer-stage">
+          <div class="page-frame"><canvas id="viewer-canvas" width="1080" height="1350" role="img" aria-label="Страница дня"></canvas></div>
         </div>
-        <button id="export-memory" class="button quiet download" type="button"><span aria-hidden="true">↓</span> Download day</button>
+        <div class="viewer-side">
+          <div class="dialog-head">
+            <div>
+              <p id="viewer-date" class="kicker"></p>
+              <h2 id="viewer-title"></h2>
+            </div>
+            <button id="close-viewer" class="icon-button" type="button" aria-label="Закрыть день"><span aria-hidden="true">×</span></button>
+          </div>
+          <p class="folder"><span class="folder-icon" aria-hidden="true"></span><span id="viewer-folder"></span></p>
+          <div class="controls">
+            <button id="play-day" class="button primary" type="button">▶ Смотреть</button>
+            <button id="voice-day" class="button quiet" type="button" aria-pressed="false">Озвучка</button>
+            <button id="mute-day" class="button quiet" type="button" aria-pressed="false">Без звука</button>
+            <a id="open-song" class="button quiet" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть песню ↗</a>
+          </div>
+          <div class="compare">
+            <p class="kicker">Тот же день — другая песня</p>
+            <div id="compare-options" class="compare-options" role="group" aria-label="Песня для предпросмотра"></div>
+            <p id="compare-note" class="compare-note" role="status" hidden></p>
+          </div>
+          <div class="save-row">
+            <button id="save-day" class="button dark" type="button">Сохранить папку дня</button>
+            <label class="check"><input id="save-video" type="checkbox" checked> с видео</label>
+          </div>
+          <p id="viewer-status" class="viewer-status" role="status" hidden></p>
+          <div class="technique-card">
+            <p class="kicker" id="viewer-technique"></p>
+            <p id="viewer-why"></p>
+            <p class="muted small" id="viewer-references"></p>
+          </div>
+          <figure class="viewer-map">
+            <div id="viewer-map"></div>
+            <figcaption class="muted small">Большая точка — этот день, маленькие — остальные дни дневника. Зоны — правило выбора приёма.</figcaption>
+          </figure>
+          <details open><summary>Почему этот день выглядит так</summary><dl id="viewer-reasons" class="reasons"></dl></details>
+          <details><summary>Запись дня</summary><p id="viewer-text" class="entry-text"></p></details>
+          <button id="delete-day" class="link-button" type="button" hidden>Удалить этот день</button>
+        </div>
       </div>
-      <p id="viewer-message" class="viewer-message" role="status" hidden></p>
-      <div class="viewer-details">
-        <details><summary>Original entry</summary><p id="original-entry"></p></details>
-        <details><summary>How this memory was made</summary><dl id="memory-recipe"></dl></details>
-      </div>
-      <audio id="soundtrack" loop preload="metadata"></audio>
+      <audio id="soundtrack" preload="auto"></audio>
     </dialog>
     <script type="module" src="/src/main.js"></script>
   </body>
