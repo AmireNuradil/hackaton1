@@ -78,7 +78,7 @@ async function main() {
   const fast = await createDay(page, { music: { file: 'city.mp3', title: 'Демо — быстрый трек' } });
   const reasons = await page.locator('#viewer-reasons').innerText();
   assert.match(reasons, /13[0-4] BPM/);
-  assert.match(reasons, /минор/);
+  assert.match(reasons, /B♭ мажор/); // the city score is a B♭7 chord
   const before = await page.locator('#viewer-canvas').evaluate((c) => c.toDataURL().length);
   await page.getByRole('button', { name: '▶ Смотреть' }).click();
   await page.waitForFunction(() => !document.getElementById('soundtrack').paused);
