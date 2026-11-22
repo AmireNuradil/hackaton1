@@ -138,7 +138,8 @@ function firstLabel(tokens, table) {
 }
 
 export function readText(text, date) {
-  const lang = RU.test(text) ? 'ru' : 'en';
+  // Russian unless the entry is written in Latin letters only (an emoji-only entry stays Russian, like the UI).
+  const lang = RU.test(text) || !/\p{Script=Latin}/u.test(text) ? 'ru' : 'en';
   const lower = text.toLocaleLowerCase('ru').replaceAll('ё', 'е');
   const tokens = tokenize(text);
   const hits = [];
@@ -178,7 +179,7 @@ export function readText(text, date) {
     place: firstMatch(tokens, PLACES),
     people: firstMatch(tokens, PEOPLE),
     detail: firstMatch(tokens, DETAILS),
-    hits: hits.sort((a, b) => Math.abs(b.valence) + Math.abs(b.arousal) - Math.abs(a.valence) - Math.abs(a.arousal)).slice(0, 6).map((hit) => hit.word),
+    hits: [...new Set(hits.sort((a, b) => Math.abs(b.valence) + Math.abs(b.arousal) - Math.abs(a.valence) - Math.abs(a.arousal)).map((hit) => hit.word))].slice(0, 6),
     sentences: sentences(text),
     words: tokens.length,
   };

@@ -33,7 +33,7 @@ a { color: inherit; }
 .small { font-size: 13px; }
 .kicker { font-size: 12px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--sienna-dark); }
 
-.site-header { border-bottom: 1px solid var(--line); position: sticky; top: 0; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(8px); z-index: 5; }
+.site-header { border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--paper); z-index: 5; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 16px; }
 .wordmark { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font: 600 30px/1 var(--serif); letter-spacing: -.02em; }
 .mark { width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(from 200deg, #d9a35a, #b4532a, #3b4a8c, #8aa39a, #d9a35a); box-shadow: inset 0 0 0 4px var(--paper); border: 1px solid var(--ink); flex: none; }
@@ -97,7 +97,8 @@ nav a:hover { color: var(--sienna-dark); }
 .footer { display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); margin-top: 50px; padding: 26px 0 40px; text-align: center; }
 
 .dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: var(--ink); padding: 0; max-height: calc(100dvh - 24px); width: min(720px, calc(100% - 24px)); box-shadow: 0 30px 100px #1c120a80; }
-.dialog::backdrop { background: #1c140fbb; backdrop-filter: blur(3px); }
+/* No backdrop-filter: blurring the page behind a playing canvas cost 4× the frame time. */
+.dialog::backdrop { background: #1c140fd9; }
 .dialog-head { display: flex; justify-content: space-between; align-items: start; gap: 14px; }
 .dialog-head h2 { font: 500 clamp(30px, 4vw, 42px)/1.05 var(--serif); letter-spacing: -.015em; }
 .editor form { padding: clamp(18px, 4vw, 32px); display: grid; gap: 16px; }

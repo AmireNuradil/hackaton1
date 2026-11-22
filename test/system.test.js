@@ -56,3 +56,17 @@ test('every page explains itself, for every technique', () => {
 test('the same inputs always build the same page', () => {
   assert.deepEqual(day(calm, music('slow', 'soft', 'major')), day(calm, music('slow', 'soft', 'major')));
 });
+
+test('the explanation never contradicts the chosen technique', () => {
+  for (const [text, song] of [
+    ['Ничего не происходило.', { source: 'file', name: 'x', bpm: null, energy: 0, mode: null, key: null, keyConfidence: 0, brightness: 0 }],
+    [calm, music('slow', 'soft', 'major')],
+    [tense, music('fast', 'intense', 'minor')],
+  ]) {
+    const { technique, reasons, mood } = day(text, song).design;
+    const cause = reasons.find((reason) => reason.input === 'Приём').cause;
+    if (mood.nostalgia >= 0.5) continue;
+    const bright = /светлое/.test(cause);
+    assert.equal(bright, technique === 'monet' || technique === 'seurat', `${technique}: ${cause}`);
+  }
+});

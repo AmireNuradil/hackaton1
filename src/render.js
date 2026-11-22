@@ -171,7 +171,9 @@ function seuratPlate(image, w, h, design, random) {
       if (random() < 0.06) dots.push({ x: px, y: py, color: vivid, phase: Math.floor(random() * 4) });
     }
   }
-  return { plate, dots };
+  // Only a few hundred dots pulse on the beat: enough to read as rhythm, cheap enough for 60 fps.
+  const step2 = Math.max(1, Math.ceil(dots.length / 420));
+  return { plate, dots: dots.filter((_, i) => i % step2 === 0) };
 }
 
 function kandinskyPlate(image, w, h, design, random) {
@@ -299,11 +301,16 @@ function wrapLines(ctx, text, width, maxLines) {
 
 // ——— Page ———
 
-export async function createPainter(target, day, images, { number = 1 } = {}) {
+// `scale` renders the page at the size it is shown (× devicePixelRatio): fewer pixels per frame on small
+// screens. Posters and video always use scale 1, the full 1080×1350 page.
+export async function createPainter(target, day, images, { number = 1, scale = 1 } = {}) {
   const { design } = day;
-  const ctx = target.getContext('2d');
-  target.width = PAGE.width;
-  target.height = PAGE.height;
+  const screen = target.getContext('2d');
+  // Helpers draw into `ctx`; static layers are baked once by pointing it at an offscreen canvas.
+  let ctx = screen;
+  target.width = Math.round(PAGE.width * scale);
+  target.height = Math.round(PAGE.height * scale);
+  screen.setTransform(scale, 0, 0, scale, 0, 0);
   const random = seeded(day.id);
   const rect = windowFor(design.technique, design.texture);
   const over = 1.14;
@@ -312,7 +319,7 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
   const build = { monet: monetPlate, seurat: seuratPlate, kandinsky: kandinskyPlate, ma: maPlate, film: filmPlate }[design.technique];
   const plates = images.map((image) => build(image, pw, ph, design, random));
   const paper = paperTexture(seeded(`${day.id}-paper`), design.palette[0]);
-  const grain = grainFrames(seeded(`${day.id}-grain`));
+  const grainPatterns = grainFrames(seeded(`${day.id}-grain`)).map((frame) => screen.createPattern(frame, 'repeat'));
   const { rhythm, motion, texture, technique } = design;
   const scenes = rhythm.scenes;
   const sceneMs = rhythm.sceneSeconds * 1000;
@@ -437,9 +444,7 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     if (texture.grain > 0.05) {
       ctx.globalAlpha = texture.grain * 0.32 * alpha;
       ctx.globalCompositeOperation = 'overlay';
-      const frame = grain[Math.floor(time / 83) % grain.length];
-      const pattern = ctx.createPattern(frame, 'repeat');
-      ctx.fillStyle = pattern;
+      ctx.fillStyle = grainPatterns[Math.floor(time / 83) % grainPatterns.length];
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
       ctx.globalCompositeOperation = 'source-over';
     }
@@ -523,24 +528,12 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     ctx.fillRect(PAGE.margin, 118, PAGE.width - 2 * PAGE.margin, 1.5);
   }
 
-  function titleBlock(time, sceneIndex, sceneProgress) {
-    const top = technique === 'ma' ? Math.max(rect.y + rect.h + 92, 1060) : 1094;
+  const titleTop = technique === 'ma' ? Math.max(rect.y + rect.h + 92, 1060) : 1094;
+
+  function staticTitle() {
     ctx.fillStyle = rgb(INK);
     ctx.font = `${design.type.italic ? 'italic ' : ''}${titleWeight} ${titleSize}px ${FONTS.serif}`;
-    titleLines.forEach((line, i) => ctx.fillText(line, PAGE.margin, top + i * titleSize * 0.98));
-    const captionY = top + (titleLines.length - 1) * titleSize * 0.98 + 66;
-    const caption = design.captions[Math.floor(sceneIndex * design.captions.length / scenes) % design.captions.length];
-    ctx.font = `500 42px ${FONTS.hand}`;
-    const lines = wrapLines(ctx, caption, PAGE.width - 2 * PAGE.margin - 40, 2);
-    const writeTime = clamp(sceneProgress * (technique === 'kandinsky' ? 3 : 1.7), 0, 1);
-    const total = lines.reduce((sum, line) => sum + line.length, 0);
-    let budget = Math.round(total * writeTime);
-    ctx.fillStyle = rgb(mix(accent, INK, 0.25));
-    lines.forEach((line, i) => {
-      const visible = line.slice(0, Math.max(0, budget));
-      budget -= line.length;
-      if (visible) ctx.fillText(visible, PAGE.margin + 4, captionY + i * 44);
-    });
+    titleLines.forEach((line, i) => ctx.fillText(line, PAGE.margin, titleTop + i * titleSize * 0.98));
     if (technique === 'ma') {
       ctx.fillStyle = rgb(accent);
       const x = PAGE.margin;
@@ -554,7 +547,23 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     }
   }
 
-  function footer(time) {
+  function caption(sceneIndex, sceneProgress) {
+    const captionY = titleTop + (titleLines.length - 1) * titleSize * 0.98 + 66;
+    const caption = design.captions[Math.floor(sceneIndex * design.captions.length / scenes) % design.captions.length];
+    ctx.font = `500 42px ${FONTS.hand}`;
+    const lines = wrapLines(ctx, caption, PAGE.width - 2 * PAGE.margin - 40, 2);
+    const writeTime = clamp(sceneProgress * (technique === 'kandinsky' ? 3 : 1.7), 0, 1);
+    const total = lines.reduce((sum, line) => sum + line.length, 0);
+    let budget = Math.round(total * writeTime);
+    ctx.fillStyle = rgb(mix(accent, INK, 0.25));
+    lines.forEach((line, i) => {
+      const visible = line.slice(0, Math.max(0, budget));
+      budget -= line.length;
+      if (visible) ctx.fillText(visible, PAGE.margin + 4, captionY + i * 44);
+    });
+  }
+
+  function staticFooter() {
     ctx.fillStyle = rgb(INK, 0.68);
     ctx.font = `600 19px ${FONTS.sans}`;
     const maxWidth = PAGE.width - 2 * PAGE.margin - 300;
@@ -566,8 +575,36 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     ctx.textAlign = 'left';
     ctx.fillStyle = rgb(INK, 0.14);
     ctx.fillRect(PAGE.margin, 1312, PAGE.width - 2 * PAGE.margin, 2);
+  }
+
+  function progress(time) {
     ctx.fillStyle = rgb(accent);
     ctx.fillRect(PAGE.margin, 1312, (PAGE.width - 2 * PAGE.margin) * clamp(time / duration, 0, 1), 2);
+  }
+
+  function layer(paint) {
+    const element = canvas(PAGE.width * scale, PAGE.height * scale);
+    ctx = element.getContext('2d');
+    ctx.scale(scale, scale);
+    paint();
+    ctx = screen;
+    return element;
+  }
+  const base = layer(() => {
+    ctx.drawImage(paper, 0, 0);
+    header();
+    if (technique === 'film') frameDecor(0, 0, 0);
+    staticTitle();
+    staticFooter();
+  });
+  const after = technique === 'monet' || technique === 'kandinsky' ? layer(() => frameDecor(0, 0, 0)) : null;
+
+  // Layers are already at screen resolution: copy them 1:1.
+  function blit(source) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(source, 0, 0);
+    ctx.restore();
   }
 
   function draw(time) {
@@ -575,9 +612,8 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     const sceneIndex = Math.floor(t / sceneMs);
     const sceneTime = t - sceneIndex * sceneMs;
     const sceneProgress = sceneTime / sceneMs;
-    ctx.drawImage(paper, 0, 0);
-    header();
-    if (technique === 'film' || technique === 'ma') frameDecor(t, sceneIndex, sceneProgress);
+    blit(base);
+    if (technique === 'ma') frameDecor(t, sceneIndex, sceneProgress);
     ctx.save();
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.w, rect.h);
@@ -592,9 +628,9 @@ export async function createPainter(target, day, images, { number = 1 } = {}) {
     const current = drawPlate(sceneIndex, sceneProgress, sceneIndex > 0 ? ease(fade) : 1);
     overlay(current, t, sceneIndex, sceneProgress, sceneIndex > 0 ? ease(fade) : 1);
     ctx.restore();
-    if (technique === 'monet' || technique === 'kandinsky') frameDecor(t, sceneIndex, sceneProgress);
-    titleBlock(t, sceneIndex, sceneProgress);
-    footer(t);
+    if (after) blit(after);
+    caption(sceneIndex, sceneProgress);
+    progress(t);
   }
 
   return { draw, duration, rect };

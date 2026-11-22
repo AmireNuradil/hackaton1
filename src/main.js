@@ -54,6 +54,12 @@ async function imagesFor(day) {
   return imageCache.get(day.id);
 }
 
+// Render scale for an on-screen canvas: its CSS width × pixel ratio, relative to the 1080 px page.
+function screenScale(element) {
+  const width = element.getBoundingClientRect().width || 540;
+  return Math.min(1, Math.max(0.4, Math.ceil(width * (window.devicePixelRatio || 1) / 1080 * 20) / 20));
+}
+
 function numbers() {
   const ordered = [...days].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
   return new Map(ordered.map((day, index) => [day.id, index + 1]));
@@ -162,25 +168,37 @@ function renderSystem() {
 
 // ——— Hero: the newest page plays silently ———
 
-const hero = { painter: null, frame: 0, start: 0, id: null };
+const hero = { painter: null, frame: 0, start: 0, id: null, visible: true, day: null };
+
+// The hero page animates only while it is on screen and no day is open, so playback gets the whole frame budget.
+function heroLoop(now) {
+  if (!hero.painter || reduceMotion.matches || !hero.visible || viewer.open || document.hidden) { hero.frame = 0; return; }
+  hero.painter.draw((now - hero.start) % hero.painter.duration);
+  hero.frame = requestAnimationFrame(heroLoop);
+}
+
+function resumeHero() {
+  if (!hero.frame && hero.painter) hero.frame = requestAnimationFrame(heroLoop);
+}
 
 async function renderHero() {
   const day = [...days].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created)[0];
   if (!day || hero.id === day.id) return;
   hero.id = day.id;
   cancelAnimationFrame(hero.frame);
-  hero.painter = await createPainter($('hero-canvas'), day, await imagesFor(day), { number: numbers().get(day.id) });
+  hero.frame = 0;
+  hero.painter = await createPainter($('hero-canvas'), day, await imagesFor(day), { number: numbers().get(day.id), scale: screenScale($('hero-canvas')) });
   const caption = $('hero-caption');
   caption.replaceChildren(node('span', '', `Папка «${day.folder}»`), node('span', 'muted', ` · ${TECHNIQUES[day.design.technique].name}`));
   $('hero-page').onclick = () => openViewer(day);
   hero.start = performance.now();
-  const loop = (now) => {
-    const time = reduceMotion.matches ? posterTime(day.design) : (now - hero.start) % hero.painter.duration;
-    hero.painter.draw(time);
-    if (!reduceMotion.matches) hero.frame = requestAnimationFrame(loop);
-  };
-  hero.frame = requestAnimationFrame(loop);
+  hero.painter.draw(posterTime(day.design));
+  hero.frame = 0;
+  resumeHero();
 }
+
+new IntersectionObserver(([entry]) => { hero.visible = entry.isIntersecting; resumeHero(); }).observe($('hero-canvas'));
+document.addEventListener('visibilitychange', resumeHero);
 
 // ——— Editor ———
 
@@ -357,6 +375,7 @@ function stopPlayback(label = '▶ Смотреть') {
 
 function startPlayback() {
   if (view.playing) { stopPlayback('▶ Смотреть'); return; }
+  if (!view.painter) return;
   view.playing = true;
   view.start = performance.now();
   $('play-day').textContent = '❚❚ Стоп';
@@ -403,11 +422,17 @@ async function openViewer(day) {
   show($('viewer-status'), '');
   $('play-day').textContent = '▶ Смотреть';
   viewer.showModal();
+  $('play-day').focus();
   const canvas = $('viewer-canvas');
   canvas.setAttribute('aria-label', `Страница дня «${design.title}», ${t.name.toLowerCase()}. ${design.captions.join(' ')}`);
-  const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id) });
+  // Painting a page takes a moment; Play stays disabled until it is ready instead of drawing nothing.
+  $('play-day').disabled = true;
+  $('viewer-stage').setAttribute('aria-busy', 'true');
+  const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id), scale: screenScale(canvas) });
   if (view.day !== day) return;
   view.painter = painter;
+  $('play-day').disabled = false;
+  $('viewer-stage').removeAttribute('aria-busy');
   painter.draw(posterTime(design));
 }
 
@@ -421,6 +446,7 @@ function closeViewer() {
   view.day = null;
   view.painter = null;
   if (viewer.open) viewer.close();
+  resumeHero();
 }
 
 async function mediaBytes(media) {

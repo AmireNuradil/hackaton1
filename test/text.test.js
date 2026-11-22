@@ -45,3 +45,9 @@ test('words like "радио" do not count as joy', () => {
 test('folder names are safe on every file system', () => {
   assert.equal(folderName('2026-11-03', 'Ночь: в офисе / перед "сдачей"?'), '2026-11-03 Ночь в офисе перед сдачей');
 });
+
+test('an entry without letters is treated as Russian, and mood words are listed once', () => {
+  assert.equal(readText('🌧️').lang, 'ru');
+  assert.equal(title('🌧️'), 'День, который хочется помнить');
+  assert.deepEqual(readText('Смеялись, смеялись и смеялись!').hits, ['смеялись']);
+});

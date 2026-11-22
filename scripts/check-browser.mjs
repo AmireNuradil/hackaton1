@@ -56,7 +56,8 @@ async function createDay(page, { music }) {
 }
 
 async function main() {
-  const browser = await chromium.launch();
+  // A UTF-8 locale lets Chromium keep the Cyrillic folder name of downloads.
+  const browser = await chromium.launch({ env: { ...process.env, LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' } });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   await context.addInitScript(() => { delete window.showDirectoryPicker; });
   const page = await context.newPage();
@@ -92,7 +93,9 @@ async function main() {
   // 3. Save the day folder as ZIP with a recorded video, then open the standalone player from it.
   const download = page.waitForEvent('download', { timeout: 90000 });
   await page.getByRole('button', { name: 'Сохранить папку дня' }).click();
-  const zipPath = await (await download).path();
+  const saved = await download;
+  assert.match(saved.suggestedFilename(), /^\d{4}-\d\d-\d\d Вечер в автобусе под дождём\.zip$/);
+  const zipPath = await saved.path();
   const zip = unzipSync(new Uint8Array(readFileSync(zipPath)));
   const folder = Object.keys(zip)[0].split('/')[0];
   assert.match(folder, /^\d{4}-\d\d-\d\d Вечер в автобусе под дождём$/);

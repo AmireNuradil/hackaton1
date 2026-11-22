@@ -61,6 +61,10 @@ function correlate(a, b) {
 }
 
 export function detectKey(chroma) {
+  // Flat chroma (noise) or a single pitch class (a drone) carries no major/minor information.
+  const mean = chroma.reduce((sum, value) => sum + value, 0) / 12;
+  const sorted = [...chroma].sort((a, b) => b - a);
+  if (!mean || (sorted[0] - sorted[11]) / mean < 0.35 || sorted[2] < mean * 0.9) return { key: null, mode: null, confidence: 0 };
   let best = { score: -Infinity };
   const scores = [];
   for (let tonic = 0; tonic < 12; tonic++) {
@@ -117,14 +121,52 @@ function tempo(envelope, framesPerSecond) {
   if (half >= minLag && at(half) > 0.72 * scores.get(bestLag)) bestLag = half;
   const peak = scores.get(Math.round(bestLag)) ?? at(bestLag);
   const average = [...scores.values()].reduce((sum, value) => sum + value, 0) / scores.size;
-  if (peak < average * 1.35) return null;
+  const variance = envelope.reduce((sum, value) => sum + (value - mean) ** 2, 0) / envelope.length;
+  // A beat needs a clear periodic peak (≥ 6.5× the average lag score) on an envelope that actually
+  // pulses (coefficient of variation ≥ 0.8). Noise and steady drones fail one of the two.
+  if (peak < average * 6.5 || Math.sqrt(variance) / mean < 0.8) return null;
   // Refine with a parabola around the peak.
   const center = Math.round(bestLag);
   const left = scores.get(center - 1) ?? peak;
   const right = scores.get(center + 1) ?? peak;
   const denom = left - 2 * peak + right;
   const offset = denom ? clamp(0.5 * (left - right) / denom, -0.5, 0.5) : 0;
-  return Math.round(60 * framesPerSecond / (center + offset));
+  const bpm = Math.round(60 * framesPerSecond / (center + offset));
+  return bpm >= 50 && bpm <= 190 ? bpm : null;
+}
+
+// Pitch-class profile from a long FFT (≈2.7 Hz bins at 22 kHz) so low chord tones land in the right semitone.
+// Each semitone gets equal weight however many bins it spans; the spectrum is whitened per frame.
+export function chromaOf(samples, sampleRate) {
+  const size = 8192;
+  const hop = 4096;
+  const re = new Float64Array(size);
+  const im = new Float64Array(size);
+  const window = Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1)));
+  const binHz = sampleRate / size;
+  const semitones = [];
+  for (let bin = 1; bin < size / 2; bin++) {
+    const hz = bin * binHz;
+    if (hz < 65 || hz > 2100) continue;
+    const exact = 12 * Math.log2(hz / 440);
+    const semitone = Math.round(exact);
+    if (Math.abs(exact - semitone) > 0.35) continue;
+    semitones.push([bin, semitone]);
+  }
+  const counts = new Map();
+  for (const [, semitone] of semitones) counts.set(semitone, (counts.get(semitone) ?? 0) + 1);
+  const chroma = new Array(12).fill(0);
+  for (let start = 0; start + size <= samples.length; start += hop) {
+    for (let i = 0; i < size; i++) { re[i] = samples[start + i] * window[i]; im[i] = 0; }
+    fft(re, im);
+    const energy = new Map();
+    for (const [bin, semitone] of semitones) energy.set(semitone, (energy.get(semitone) ?? 0) + Math.hypot(re[bin], im[bin]) ** 2 / counts.get(semitone));
+    const values = [...energy.values()];
+    const total = values.reduce((sum, value) => sum + value, 0);
+    if (!total) continue;
+    for (const [semitone, value] of energy) chroma[((semitone + 9) % 12 + 12) % 12] += Math.sqrt(value / total);
+  }
+  return chroma;
 }
 
 export function measureMusic(samples, sampleRate) {
@@ -137,17 +179,10 @@ export function measureMusic(samples, sampleRate) {
   const window = Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1)));
   let previous = new Float64Array(size / 2);
   const flux = [];
-  const chroma = new Array(12).fill(0);
   let rmsSum = 0;
   let centroidSum = 0;
   let centroidWeight = 0;
   const binHz = sampleRate / size;
-  const pitchClass = new Int8Array(size / 2).fill(-1);
-  for (let bin = 1; bin < size / 2; bin++) {
-    const hz = bin * binHz;
-    if (hz < 55 || hz > 2000) continue;
-    pitchClass[bin] = ((Math.round(12 * Math.log2(hz / 440)) + 9) % 12 + 12) % 12;
-  }
   for (let frame = 0; frame < frames; frame++) {
     const start = frame * hop;
     let energy = 0;
@@ -169,7 +204,6 @@ export function measureMusic(samples, sampleRate) {
       rise += Math.max(0, value - previous[bin]);
       weighted += value * bin * binHz;
       sum += value;
-      if (pitchClass[bin] >= 0) chroma[pitchClass[bin]] += value;
     }
     if (sum) { centroidSum += weighted / sum * sum; centroidWeight += sum; }
     flux.push(rise);
@@ -182,7 +216,7 @@ export function measureMusic(samples, sampleRate) {
   const brightness = clamp((centroid - 900) / 2600, 0, 1);
   const bpm = rms < 0.002 ? null : tempo(flux, sampleRate / hop);
   const energy = rms < 0.002 ? 0 : clamp(0.4 * loudness + 0.45 * clamp((onsetRate - 8) / 40, 0, 1) + 0.15 * brightness, 0, 1);
-  const key = rms < 0.002 ? { key: null, mode: null, confidence: 0 } : detectKey(chroma);
+  const key = rms < 0.002 ? { key: null, mode: null, confidence: 0 } : detectKey(chromaOf(samples, sampleRate));
   return {
     bpm,
     energy: Number(energy.toFixed(2)),

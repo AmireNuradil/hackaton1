@@ -41,3 +41,21 @@ test('a described link stands in for analysis', () => {
     { bpm: 66, energy: 0.25, mode: 'minor', key: null, keyConfidence: 0.6, brightness: 0.25, genre: 'jazz', year: 1957 });
   assert.equal(describedMusic({ pace: 'fast', energy: '', mode: '', genre: 'electronic' }).energy, 0.8);
 });
+
+test('noise and a steady drone have no beat and no key', () => {
+  let seed = 7;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+  const noise = Float32Array.from({ length: rate * 12 }, () => random() * 0.3);
+  const drone = Float32Array.from({ length: rate * 12 }, (_, i) => 0.3 * Math.sin(2 * Math.PI * 220 * i / rate));
+  for (const signal of [noise, drone]) {
+    const result = measureMusic(signal, rate);
+    assert.equal(result.bpm, null);
+    assert.equal(result.mode, null);
+  }
+});
+
+test('a minor chord with a low bass note is still read as minor', () => {
+  // C3 E♭3 G3 D4, the way the demo "platform" score voices it.
+  const result = measureMusic(song(98, [48, 51, 55, 62]), rate);
+  assert.equal(result.key, 'C минор');
+});

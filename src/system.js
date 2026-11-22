@@ -158,7 +158,11 @@ const hex = (rgb) => `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join(''
 function explain({ reading, photo, music, design }) {
   const { mood, technique, rhythm, texture } = design;
   const tone = mood.valence > 0.15 ? 'тёплая' : mood.valence < -0.15 ? 'холодная' : 'нейтральная';
-  const tempo = mood.arousal > 0.3 ? 'быстрый' : mood.arousal < -0.3 ? 'медленный' : 'спокойный';
+  const tempo = rhythm.sceneSeconds < 4.5 ? 'быстрый' : rhythm.sceneSeconds < 7 ? 'спокойный' : 'медленный';
+  // Wording follows the exact thresholds techniqueFor() uses, so the explanation never contradicts the page.
+  const active = mood.arousal >= 0.12;
+  const bright = active ? mood.valence >= 0 : mood.valence >= 0.05;
+  const near = Math.abs(mood.valence) < 0.15 ? 'скорее ' : '';
   const where = [reading.time && TIME_NAMES[reading.time], reading.season && SEASON_NAMES[reading.season]].filter(Boolean).join(', ');
   const reasons = [
     {
@@ -184,7 +188,9 @@ function explain({ reading, photo, music, design }) {
     },
     {
       input: 'Приём',
-      cause: `Настроение ${mood.valence >= 0 ? 'светлое' : 'тёмное'} и ${mood.arousal >= 0.12 ? 'подвижное' : 'тихое'}${mood.nostalgia >= 0.5 ? ', с ностальгией' : ''}`,
+      cause: mood.nostalgia >= 0.5
+        ? `Ностальгия ${pct(mood.nostalgia)} — она важнее остальных осей`
+        : `Настроение ${near}${bright ? 'светлое' : 'тёмное'} (${mood.valence >= 0 ? '+' : ''}${mood.valence}) и ${active ? 'подвижное' : 'тихое'} (${mood.arousal >= 0 ? '+' : ''}${mood.arousal})`,
       effect: `${TECHNIQUES[technique].name}: ${TECHNIQUES[technique].why}`,
     },
   ];
