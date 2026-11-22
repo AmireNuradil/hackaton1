@@ -1,0 +1,30 @@
+AFTERIMAGE TEAM WORKFLOW
+
+Laptop 1 — Creative direction in Codex
+Prepare a short story, consistent images and a spoken presentation. Add a sample
+only after deciding where it will be used in the demo. Use ImageGen for fictional
+refs or visuals. Use team photos with permission when presenting a real story.
+
+Laptop 2 — Claude Opus 5.5 in Claude Code
+Read CLAUDE-TASK.txt on main. Implement the task in a separate
+branch and bring it back as a draft PR. Include test output and the exact browser
+steps that show the change. Keep the art and story linked to the PR.
+
+PC — Demo and release
+Preview the PR, play the two tracks with the same saved day, and check reload and
+export. Rehearse DEMO-RU.txt with the app open. Record from the exact commit the
+team approves and note that SHA with the recording.
+
+Handoff loop
+Codex posts the art, story and acceptance criteria on the shared branch. Claude
+returns the draft PR and evidence. The team checks it on the PC. Codex matches
+the narration to what the working build shows and prepares the final visuals.
+
+GitHub carries project files and changes. Afterimage keeps personal entries in
+the browser that created them. Download day produces a folder you can copy to
+another computer and replay there.
+
+CURRENT CREATIVE PACKAGE
+assets/last-bus.webp — a fictional Tashkent evening generated with ImageGen.
+DEMO-RU.txt — spoken Russian demo script and operator cues.
+CLAUDE-TASK.txt — first engineering task and acceptance checks.
