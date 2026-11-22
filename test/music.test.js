@@ -59,3 +59,29 @@ test('a minor chord with a low bass note is still read as minor', () => {
   const result = measureMusic(song(98, [48, 51, 55, 62]), rate);
   assert.equal(result.key, 'C минор');
 });
+
+test('a drum groove with chords is read at its tempo; energy follows how busy it is, not its volume', () => {
+  // Kick on 1 and 3, snare on 2 and 4, hi-hats on eighths over an E minor chord — the kind of mix the
+  // first detector called beatless. Noise comes from a fixed seed, so the test is repeatable.
+  const groove = (bpm, { level = 1, busy = true } = {}) => {
+    let seed = 11;
+    const noise = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    return Float32Array.from({ length: rate * 16 }, (_, i) => {
+      const t = i / rate;
+      const beat = t * bpm / 60;
+      const eighth = (beat * 2) % 1;
+      const inBeat = beat % 1;
+      const position = Math.floor(beat) % 4;
+      const chord = [52, 55, 59].reduce((sum, n) => sum + Math.sin(2 * Math.PI * 440 * 2 ** ((n - 69) / 12) * t), 0) * 0.05;
+      const kick = position % 2 === 0 || !busy ? Math.sin(2 * Math.PI * 55 * t) * Math.exp(-inBeat * 18) * 0.6 * (busy || position === 0 ? 1 : 0) : 0;
+      const snare = busy && position % 2 === 1 ? noise() * Math.exp(-inBeat * 20) * 0.35 : 0;
+      const hat = busy ? noise() * Math.exp(-eighth * 60) * 0.12 : 0;
+      return (chord + kick + snare + hat) * level;
+    });
+  };
+  const busy = measureMusic(groove(140), rate);
+  assert.ok(Math.abs(busy.bpm - 140) <= 4, `read ${busy.bpm}`);
+  assert.equal(busy.mode, 'minor');
+  assert.equal(measureMusic(groove(140, { level: 0.2 }), rate).energy, busy.energy, 'a quieter copy is not calmer');
+  assert.ok(measureMusic(groove(140, { busy: false }), rate).energy < busy.energy, 'one kick per bar is calmer than a full groove');
+});

@@ -5,6 +5,8 @@ const RU = /\p{Script=Cyrillic}/u;
 
 // [stem, valence -2..2, arousal -2..2, nostalgia 0..2]
 const LEXICON = [
+  // Listed first so they win over shorter stems: «волновался» is nerves, not «волны».
+  ['волнова', -0.3, 1.2], ['волнуюсь', -0.3, 1.2],
   // calm & warm
   ['тепл', 1, -0.4], ['тёпл', 1, -0.4], ['уют', 1.5, -1.2], ['тих', 0.3, -1.6], ['тиш', 0.3, -1.6], ['спокой', 1, -1.6],
   ['мягк', 0.8, -1], ['нежн', 1.2, -0.8], ['обня', 1.5, -0.2], ['любл', 1.5, 0.2], ['любов', 1.5, 0.2], ['какао', 0.9, -0.9],
@@ -31,6 +33,12 @@ const LEXICON = [
   ['когда-то', 0, -0.4, 1.5], ['давно', 0, -0.3, 0.9], ['бабушк', 0.8, -0.6, 1.2], ['дедушк', 0.8, -0.6, 1.2], ['старый', 0, -0.4, 1],
   ['старая', 0, -0.4, 1], ['школ', 0.2, 0.2, 1], ['альбом', 0.3, -0.5, 1.4], ['пластинк', 0.5, -0.4, 1.5], ['кассет', 0.4, -0.2, 1.6],
   ['как раньше', 0, -0.2, 1.4], ['впервые', 0.8, 0.4, 0.6], ['уже не', -0.6, -0.4, 1],
+  // everyday praise and alarm
+  ['лучш', 1.3, 0.4], ['прекрасн', 1.4, 0.2], ['классн', 1.1, 0.5], ['кайф', 1.3, 0.4], ['круто', 1.2, 0.8], ['сюрприз', 1.2, 1],
+  ['торт', 0.8, 0.3], ['обожа', 1.4, 0.3], ['восхит', 1.6, 0.8], ['счастлив', 1.8, 0.8], ['гордост', 1.3, 0.6], ['горд', 1.2, 0.5],
+  ['страшн', -1.3, 1.2], ['страх', -1.3, 1.2], ['ужас', -1.5, 1], ['плохо', -1.2, 0], ['больно', -1.4, 0.5], ['тревог', -1.2, 1],
+  ['обид', -1.3, 0.3], ['бесит', -1.4, 1.3], ['лень', -0.3, -0.8], ['апати', -1.2, -1.2], ['лежал', 0, -0.8], ['потерял', -1.1, 0.3],
+  ['ничего не хотел', -1, -1.2], ['не хотелось', -0.8, -1],
   // English
   ['warm', 1, -0.4], ['cozy', 1.5, -1.2], ['quiet', 0.3, -1.6], ['calm', 1, -1.6], ['soft', 0.8, -1], ['gentle', 1, -1],
   ['love', 1.5, 0.2], ['cocoa', 0.9, -0.9], ['coffee', 0.5, -0.3], ['tea', 0.6, -0.8], ['talk', 0.6, -0.4], ['smil', 1.2, 0.3],
@@ -44,6 +52,9 @@ const LEXICON = [
   ['mist', -0.2, -1.1], ['fog', -0.2, -1.1], ['last', -0.6, -0.2], ['dark', -0.4, -0.3],
   ['remember', 0, -0.3, 1.2], ['childhood', 0.6, -0.2, 1.8], ['again', 0.2, 0, 0.8], ['grandma', 0.8, -0.6, 1.2], ['grandpa', 0.8, -0.6, 1.2],
   ['old', 0, -0.4, 0.9], ['vinyl', 0.5, -0.4, 1.5], ['used to', 0, -0.4, 1.4],
+  ['best', 1.5, 0.5], ['amazing', 1.6, 0.9], ['awesome', 1.5, 0.9], ['wonderful', 1.5, 0.3], ['great', 1.2, 0.4], ['excit', 1.4, 1.2],
+  ['scream', -0.2, 1.4], ['cheer', 1.3, 1], ['scared', -1.3, 1.1], ['anxious', -1.2, 1], ['worried', -1.1, 0.8], ['bored', -0.9, -0.8],
+  ['peaceful', 1.2, -1.4], ['relax', 1.1, -1.2], ['exhausted', -1, -0.6], ['proud', 1.3, 0.6], ['lost', -1, 0.2],
 ];
 
 const SEASONS = [
@@ -62,6 +73,12 @@ const TIMES = [
 
 // stem → [Russian phrase, English phrase]
 const PLACES = [
+  [/^аул/, 'в ауле', 'in the village'], [/^(общаг|общежит)/, 'в общаге', 'at the dorm'], [/^(универ|университет)/, 'в университете', 'at university'],
+  [/^больниц/, 'в больнице', 'at the hospital'], [/^аэропорт/, 'в аэропорту', 'at the airport'], [/^(машин|авто)$|^машине/, 'в машине', 'in the car'],
+  [/^(кинотеатр|кино)$/, 'в кино', 'at the cinema'], [/^музе[ейю]/, 'в музее', 'at the museum'], [/^библиотек/, 'в библиотеке', 'in the library'],
+  [/^стадион/, 'на стадионе', 'at the stadium'], [/^концерт/, 'на концерте', 'at the concert'], [/^(медеу|шымбулак)/, 'на Медеу', 'at Medeu'],
+  [/^астан/, 'в Астане', 'in Astana'], [/^алмат/, 'в Алматы', 'in Almaty'], [/^шымкент/, 'в Шымкенте', 'in Shymkent'],
+  [/^(dorm)/, 'в общаге', 'at the dorm'], [/^(hospital)/, 'в больнице', 'at the hospital'], [/^(airport)/, 'в аэропорту', 'at the airport'],
   [/^парк/, 'в парке', 'in the park'], [/^(мор|моря)/, 'у моря', 'by the sea'], [/^пляж/, 'на пляже', 'on the beach'],
   [/^берег/, 'на берегу', 'on the shore'], [/^офис/, 'в офисе', 'at the office'], [/^поезд/, 'в поезде', 'on the train'],
   [/^(перрон|вокзал|платформ)/, 'на перроне', 'on the platform'], [/^автобус/, 'в автобусе', 'on the bus'],
@@ -89,6 +106,7 @@ const PEOPLE = [
 ];
 
 const DETAILS = [
+  [/^(экзамен|сесси|зачет)/, 'перед экзаменом', 'before the exam'], [/^exam/, 'перед экзаменом', 'before the exam'],
   [/^какао/, 'и какао', 'and cocoa'], [/^коф/, 'и кофе', 'and coffee'], [/^ча[йя]$|^чаем$/, 'и чай', 'and tea'],
   [/^дожд/, 'под дождём', 'in the rain'], [/^(снег|снеж)/, 'под снегом', 'in the snow'], [/^(дедлайн|сдач)/, 'перед сдачей', 'before the deadline'],
   [/^туман/, 'в тумане', 'in the mist'], [/^(закат)/, 'на закате', 'at sunset'], [/^(звёзд|звезд)/, 'под звёздами', 'under the stars'],
@@ -96,6 +114,14 @@ const DETAILS = [
   [/^cocoa/, 'и какао', 'and cocoa'], [/^coffee/, 'и кофе', 'and coffee'], [/^tea$/, 'и чай', 'and tea'], [/^rain/, 'под дождём', 'in the rain'],
   [/^snow/, 'под снегом', 'in the snow'], [/^deadline/, 'перед сдачей', 'before the deadline'], [/^(mist|fog)/, 'в тумане', 'in the mist'],
   [/^sunset/, 'на закате', 'at sunset'], [/^neon/, 'в неоне', 'in neon'],
+];
+
+// Named occasions lead the title instead of the time of day: «День рождения с друзьями».
+const EVENTS = [
+  [/^рождени/, 'День рождения', 'Birthday'], [/^исполнилось$/, 'День рождения', 'Birthday'], [/^(днюх|днюшк)/, 'День рождения', 'Birthday'], [/^birthday/, 'День рождения', 'Birthday'],
+  [/^свадьб/, 'Свадьба', 'Wedding'], [/^wedding/, 'Свадьба', 'Wedding'], [/^выпускн/, 'Выпускной', 'Graduation'], [/^graduation/, 'Выпускной', 'Graduation'],
+  [/^наурыз/, 'Наурыз', 'Nauryz'], [/^nauryz/, 'Наурыз', 'Nauryz'], [/^новогод/, 'Новогодняя ночь', 'New Year’s Eve'], [/^свидани/, 'Свидание', 'A date'],
+  [/^поход/, 'Поход', 'Hike'], [/^hik(e|ing)/, 'Поход', 'Hike'], [/^рыбалк/, 'Рыбалка', 'Fishing'], [/^переезд/, 'Переезд', 'Moving day'],
 ];
 
 const HEAD = {
@@ -179,6 +205,7 @@ export function readText(text, date) {
     place: firstMatch(tokens, PLACES),
     people: firstMatch(tokens, PEOPLE),
     detail: firstMatch(tokens, DETAILS),
+    event: /новый год/.test(lower) ? [null, 'Новый год', 'New Year'] : /new year/.test(lower) ? [null, 'Новый год', 'New Year'] : firstMatch(tokens, EVENTS),
     hits: [...new Set(hits.sort((a, b) => Math.abs(b.valence) + Math.abs(b.arousal) - Math.abs(a.valence) - Math.abs(a.arousal)).map((hit) => hit.word))].slice(0, 6),
     sentences: sentences(text),
     words: tokens.length,
@@ -196,12 +223,13 @@ function fallbackTitle(reading, lang) {
   return lang === 'ru' ? 'День, который хочется помнить' : 'A day worth remembering';
 }
 
-// Titles follow one pattern: [season] time-of-day + place + company + detail, 3–7 words.
+// Titles follow one pattern: occasion or [season] time-of-day, then place, company and a detail; 3–7 words.
 export function titleFor(reading) {
   const ru = reading.lang === 'ru';
   const pieces = [];
   const time = reading.time ?? (reading.place || reading.people ? 'day' : null);
-  if (time) {
+  if (reading.event) pieces.push(ru ? reading.event[1] : reading.event[2]);
+  else if (time) {
     if (ru) {
       const [noun, gender] = HEAD.ru[time];
       pieces.push(reading.seasonFromText ? `${SEASON_ADJ[reading.season][gender]} ${noun.toLowerCase()}` : noun);

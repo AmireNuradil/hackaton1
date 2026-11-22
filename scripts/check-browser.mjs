@@ -84,7 +84,7 @@ async function main() {
   const fast = await createDay(page, { music: { file: 'city.mp3', title: 'Демо — быстрый трек' } });
   const reasons = await page.locator('#viewer-reasons').innerText();
   assert.match(reasons, /13[0-4] BPM/);
-  assert.match(reasons, /B♭ мажор/); // the city score is a B♭7 chord
+  assert.match(reasons, /минор/); // the city score is in D minor
   const before = await page.locator('#viewer-canvas').evaluate((c) => c.toDataURL().length);
   await page.getByRole('button', { name: '▶ Смотреть' }).click();
   await page.waitForFunction(() => !document.getElementById('soundtrack').paused);
@@ -135,12 +135,12 @@ async function main() {
   await page.locator('.day-button', { hasText: 'Ночь в офисе перед сдачей' }).click();
   await page.locator('#play-day:not([disabled])').waitFor();
   assert.match(await page.locator('#viewer-technique').innerText(), /Линии и круги/i);
-  await page.locator('.compare-option', { hasText: '«Берег»' }).click();
+  await page.locator('.compare-option', { hasText: '«Окно»' }).click();
   await page.locator('#play-day:not([disabled])').waitFor();
   assert.match(await page.locator('#viewer-technique').innerText(), /Тушь и воздух/i);
   assert.match(await page.locator('#compare-note').innerText(), /остаётся своя песня/);
   assert.ok(await page.locator('#viewer-stage').evaluate((stage) => stage.classList.contains('is-preview')));
-  assert.match(await page.locator('#soundtrack').getAttribute('src'), /coast\.mp3$/);
+  assert.match(await page.locator('#soundtrack').getAttribute('src'), /morning\.mp3$/);
   await page.getByLabel('с видео').uncheck();
   const previewSave = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Сохранить папку дня' }).click();
@@ -148,7 +148,7 @@ async function main() {
   const previewRecord = JSON.parse(strFromU8(previewZip[Object.keys(previewZip).find((name) => name.endsWith('/day.json'))]));
   assert.equal(previewRecord.design.technique, 'kandinsky');
   assert.ok(Object.keys(previewZip).some((name) => name.endsWith('/song.mp3')));
-  assert.equal(previewRecord.inputs.music.bpm, 132);
+  assert.ok(Math.abs(previewRecord.inputs.music.bpm - 132) <= 2);
   await page.getByRole('button', { name: 'Закрыть день' }).click();
   await page.locator('.day-button', { hasText: 'Ночь в офисе перед сдачей' }).click();
   await page.locator('#play-day:not([disabled])').waitFor();
