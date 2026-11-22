@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Afterimage is a personal journal that turns the words, photos and music of a day into a memory you can replay.">
+    <meta name="theme-color" content="#faf7f0">
+    <title>Afterimage — The Memory Journal</title>
+  </head>
+  <body>
+    <header class="site-header" id="top">
+      <div class="shell header-inner">
+        <a class="wordmark" href="#top" aria-label="Afterimage home"><span class="mark" aria-hidden="true"></span>afterimage<span class="wordmark-dot">.</span></a>
+        <nav aria-label="Main navigation">
+          <a href="#archive" class="archive-link">Archive</a>
+          <button class="button primary new-memory" type="button"><span class="plus" aria-hidden="true"></span> New memory</button>
+        </nav>
+      </div>
+    </header>
+    <main class="shell">
+      <section aria-labelledby="journal-title" class="journal">
+        <div class="journal-header">
+          <div>
+            <h1 id="journal-title">The memory journal<span>.</span></h1>
+            <p>Keep the feeling of a day.</p>
+          </div>
+          <p class="journal-date" id="journal-date"></p>
+        </div>
+        <div id="feature" class="feature" aria-live="polite"></div>
+      </section>
+      <section id="archive" class="archive" aria-labelledby="archive-title">
+        <div class="archive-header">
+          <div class="archive-heading">
+            <h2 id="archive-title">Archive</h2>
+            <span id="entry-count" class="entry-count"></span>
+          </div>
+          <label class="filter-label">
+            <span class="sr-only">Filter memories</span>
+            <select id="entry-filter">
+              <option value="all">All memories</option>
+              <option value="mine">My memories</option>
+              <option value="examples">Sample memories</option>
+            </select>
+          </label>
+        </div>
+        <div id="entries" class="entries"></div>
+        <p id="archive-status" class="archive-status" role="status" hidden></p>
+      </section>
+      <footer class="footer"><span class="mark" aria-hidden="true"></span><span>Memories you add stay in this browser.</span></footer>
+    </main>
+
+    <dialog id="editor" class="dialog editor" aria-labelledby="editor-title">
+      <div class="dialog-heading">
+        <div>
+          <h2 id="editor-title">A new memory</h2>
+          <p>Start with something you remember about the day.</p>
+        </div>
+        <button class="icon-button close-editor" aria-label="Close new memory" type="button"><span class="cross" aria-hidden="true"></span></button>
+      </div>
+      <form id="entry-form">
+        <div class="form-field">
+          <label for="memory-date">Date</label>
+          <input id="memory-date" name="date" type="date" required>
+        </div>
+        <div class="form-field">
+          <label for="entry-text">What happened?</label>
+          <textarea id="entry-text" name="text" maxlength="2400" rows="4" placeholder="The light at the window, the walk home, the song you kept playing…" required></textarea>
+        </div>
+        <div class="form-field">
+          <label for="entry-photos">Photos <small>1–6 images</small></label>
+          <input type="file" id="entry-photos" name="photos" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required>
+          <div id="photo-selection" class="photo-selection" hidden></div>
+        </div>
+        <fieldset class="form-field song-field">
+          <legend>Soundtrack</legend>
+          <div class="song-options" aria-label="Soundtrack source">
+            <label><input name="song-source" type="radio" value="upload" checked> Audio file</label>
+            <label><input name="song-source" type="radio" value="link"> Song link</label>
+          </div>
+          <div class="form-field" id="upload-group">
+            <label for="entry-audio" class="sr-only">Audio file</label>
+            <input id="entry-audio" name="audio" type="file" accept="audio/*" required>
+            <span class="field-note">MP3, WAV or OGG · up to 20 MB</span>
+          </div>
+          <div id="link-group" hidden>
+            <div class="form-field">
+              <label for="song-link">Song URL</label>
+              <input id="song-link" name="song-link" type="url" placeholder="https://…" disabled required>
+              <span class="field-note">Describe how this song sounds. The link opens the track when you replay the memory.</span>
+            </div>
+            <div class="field-row">
+              <div class="form-field">
+                <label for="song-tempo">Pace</label>
+                <select id="song-tempo" name="song-tempo" disabled required>
+                  <option value="">Choose a pace</option><option value="62">Slow</option><option value="94">Steady</option><option value="146">Fast</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="song-energy">Energy</label>
+                <select id="song-energy" name="song-energy" disabled required>
+                  <option value="">Choose a level</option><option value="0.25">Soft</option><option value="0.55">Full</option><option value="0.87">Intense</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+        <p id="form-error" role="alert" class="form-error" hidden></p>
+        <div class="form-actions">
+          <button class="button quiet close-editor" type="button">Cancel</button>
+          <button id="create-memory" type="submit" class="button primary">Create memory</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="viewer" class="dialog viewer" aria-labelledby="viewer-title">
+      <div class="viewer-heading">
+        <time id="viewer-date"></time>
+        <button id="close-viewer" class="icon-button" aria-label="Close memory" type="button"><span class="cross" aria-hidden="true"></span></button>
+      </div>
+      <div id="scene" class="scene" aria-label="Memory scene">
+        <div id="shot-images" class="shot-images"></div>
+        <div class="scene-tint"></div>
+        <div class="scene-caption"><h2 id="viewer-title"></h2><p id="scene-phrase"></p></div>
+        <div id="scene-progress" class="scene-progress" aria-hidden="true"></div>
+      </div>
+      <div class="viewer-tools">
+        <div class="viewer-playback">
+          <button id="play-scene" class="button primary" type="button"><span class="play" aria-hidden="true"></span><span id="play-label">Play memory</span></button>
+          <button id="sound-toggle" type="button" class="button quiet" aria-pressed="false" hidden>Mute</button>
+          <a id="song-open" class="button quiet" href="#" target="_blank" rel="noopener noreferrer" hidden>Open song <span aria-hidden="true">↗</span></a>
+        </div>
+        <button id="export-memory" class="button quiet download" type="button"><span aria-hidden="true">↓</span> Download day</button>
+      </div>
+      <p id="viewer-message" class="viewer-message" role="status" hidden></p>
+      <div class="viewer-details">
+        <details><summary>Original entry</summary><p id="original-entry"></p></details>
+        <details><summary>How this memory was made</summary><dl id="memory-recipe"></dl></details>
+      </div>
+      <audio id="soundtrack" loop preload="metadata"></audio>
+    </dialog>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

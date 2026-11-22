@@ -1,1 +1,0 @@
-{"base_currency":"KZT","counts":{"fx":64,"invoices":31,"ledger":272,"payments":4},"episode_id":"e-c8418325c9fa9545c1652ac1","period_end":"2026-12-01T00:00:00-07:30","period_start":"2026-11-01T00:00:00-07:30","rounding_rules":{"currency_exponents":{"JPY":0,"KZT":2,"USD":2},"mode":"ROUND_HALF_EVEN"},"schema_version":"1.0.0","timezone":"-07:30"}
