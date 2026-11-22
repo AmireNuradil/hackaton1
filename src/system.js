@@ -113,12 +113,14 @@ export function composeDay({ text, date, reading, photo, music, photoCount }) {
   const lines = reading.sentences.length > 1 && reading.sentences[0].split(/\s+/).length <= 8 ? reading.sentences.slice(1) : reading.sentences;
   const captions = (lines.length ? lines : [text.trim()]).slice(0, 6)
     .map((line) => (Array.from(line).length > 110 ? `${Array.from(line).slice(0, 108).join('').trimEnd()}…` : line));
-  const scenes = Math.max(3, photoCount, captions.length);
-  // Frames last a whole number of beats: the nearest phrase length that keeps a frame within 2.2–9 s
-  // and the page within 15–45 s. Only songs with no beat at all fall back to plain clamping.
-  const fits = (beats) => beats * beat >= 2.2 && beats * beat <= 9 && scenes * beats * beat >= 15 && scenes * beats * beat <= 45;
+  const minimumScenes = Math.max(3, photoCount, captions.length);
+  // Frames last a whole number of beats: the phrase length nearest to the mood's, 2.2–9 s per frame, with
+  // every photo and line fitting into 45 s. A lively song then gets more, shorter shots rather than
+  // stretched frames: photos return with new crops until the page lasts at least 15 s.
+  const fits = (beats) => beats * beat >= 2.2 && beats * beat <= 9 && minimumScenes * beats * beat <= 45;
   const phrase = [2, 4, 6, 8, 12, 16, 24, 32].filter(fits).sort((a, b) => Math.abs(a - beatsPerScene) - Math.abs(b - beatsPerScene))[0];
-  const sceneSeconds = phrase ? phrase * beat : clamp(clamp(beatsPerScene * beat, 2.2, 9), 15 / scenes, 45 / scenes);
+  const sceneSeconds = phrase ? phrase * beat : clamp(clamp(beatsPerScene * beat, 2.2, 9), 0, 45 / minimumScenes);
+  const scenes = Math.max(minimumScenes, Math.min(Math.ceil(15 / sceneSeconds), Math.floor(45 / sceneSeconds)));
   const transition = technique === 'kandinsky' ? 90 : Math.round(lerp(1900, 260, (mood.arousal + 1) / 2));
   const energy = music.energy;
   const design = {
@@ -154,6 +156,7 @@ export function composeDay({ text, date, reading, photo, music, photoCount }) {
 }
 
 const pct = (value) => `${Math.round(value * 100)}%`;
+const beatsLabel = (n) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'доля' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'доли' : 'долей'}`;
 const hex = (rgb) => `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 
 function explain({ reading, photo, music, design }) {
@@ -185,7 +188,7 @@ function explain({ reading, photo, music, design }) {
         music.genre ? GENRES[music.genre].label.toLowerCase() : null,
         music.year ? `${music.year} г.` : null,
       ].filter(Boolean).join(' · '),
-      effect: `${tempo[0].toUpperCase() + tempo.slice(1)} ритм: ${rhythm.sceneSeconds} с на кадр (${rhythm.beatsPerScene} долей), ${rhythm.transition < 200 ? 'резкая склейка' : `растворение ${rhythm.transition} мс`}${music.mode === 'minor' ? ', приглушённый цвет' : music.mode === 'major' ? ', открытый свет' : ''}`,
+      effect: `${tempo[0].toUpperCase() + tempo.slice(1)} ритм: ${rhythm.sceneSeconds} с на кадр${music.bpm ? ` (${beatsLabel(rhythm.beatsPerScene)})` : ', без привязки к долям'}, ${rhythm.transition < 200 ? 'резкая склейка' : `растворение ${rhythm.transition} мс`}${music.mode === 'minor' ? ', приглушённый цвет' : music.mode === 'major' ? ', открытый свет' : ''}`,
     },
     {
       input: 'Приём',

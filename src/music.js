@@ -193,6 +193,8 @@ export function analyseFrames(samples, sampleRate) {
   const im = new Float64Array(size);
   const window = Float64Array.from({ length: size }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1)));
   let previous = new Float64Array(size / 2);
+  let highRise = 0;
+  let lowRise = 0;
   const flux = [];
   let rmsSum = 0;
   let centroidSum = 0;
@@ -216,7 +218,10 @@ export function analyseFrames(samples, sampleRate) {
     for (let bin = 1; bin < size / 2; bin++) {
       const value = Math.log1p(100 * gain * Math.hypot(re[bin], im[bin]));
       magnitude[bin] = value;
-      rise += Math.max(0, value - previous[bin]);
+      const step = Math.max(0, value - previous[bin]);
+      rise += step;
+      if (bin * binHz > 5000) highRise += step;
+      else if (bin * binHz < 150) lowRise += step;
       weighted += value * bin * binHz;
       sum += value;
     }
@@ -224,17 +229,27 @@ export function analyseFrames(samples, sampleRate) {
     flux.push(rise);
     previous = magnitude;
   }
-  return { flux, framesPerSecond: sampleRate / hop, rms: rmsSum / frames, centroid: centroidWeight ? centroidSum / centroidWeight : 0 };
+  const totalRise = flux.reduce((total, value) => total + value, 0);
+  return {
+    flux, framesPerSecond: sampleRate / hop, rms: rmsSum / frames, centroid: centroidWeight ? centroidSum / centroidWeight : 0,
+    // Share of onset strength above 5 kHz: hats, snares and cymbals put most of their attack there.
+    percussion: totalRise ? highRise / totalRise : 0,
+    kick: totalRise ? lowRise / totalRise : 0,
+  };
 }
 
 export function measureMusic(samples, sampleRate) {
   const frames = analyseFrames(samples, sampleRate);
   if (!frames) return { bpm: null, energy: 0, mode: null, key: null, keyConfidence: 0, brightness: 0 };
-  const { flux, framesPerSecond, rms, centroid } = frames;
+  const { flux, framesPerSecond, rms, centroid, percussion, kick } = frames;
   const onsetStrength = flux.reduce((total, value) => total + value, 0) / flux.length;
   const brightness = clamp((centroid - 900) / 2600, 0, 1);
   // A steady tone has almost no onsets (songs in the test set average 110–340 on this scale): no tempo.
-  const bpm = rms < 0.002 || onsetStrength < 12 ? null : estimateTempo(flux, framesPerSecond).bpm;
+  let bpm = rms < 0.002 || onsetStrength < 12 ? null : estimateTempo(flux, framesPerSecond).bpm;
+  // Heuristic: without drums, a fast even run of notes is heard at half speed (arpeggios at 136 feel like a
+  // 68 ballad). Drum songs in the test set reach 0.48–0.57 high-band onset share, drumless arpeggios
+  // 0.42–0.45; a bare kick pattern (low-band share above 0.08) keeps its tempo.
+  if (bpm > 120 && percussion < 0.47 && kick < 0.08) bpm = Math.round(bpm / 2);
   // Felt intensity: how densely and sharply notes and hits land (gain-normalized onset strength, r = 0.84
   // with hand-rated intensity of 18 test songs), plus a little tempo. Loudness is left out on purpose:
   // streamed and downloaded songs are all mastered loud, ballads included.

@@ -51,3 +51,20 @@ test('an entry without letters is treated as Russian, and mood words are listed 
   assert.equal(title('🌧️'), 'День, который хочется помнить');
   assert.deepEqual(readText('Смеялись, смеялись и смеялись!').hits, ['смеялись']);
 });
+
+test('occasions and local places lead the title', () => {
+  assert.equal(title('Сегодня мне исполнилось двадцать! Друзья устроили сюрприз, танцевали до ночи.'), 'День рождения с друзьями');
+  assert.equal(title('Сессия. Ночь перед экзаменом, сижу в общаге с конспектами. Паника.'), 'Ночь в общаге перед экзаменом');
+  assert.equal(title('Приехала к бабушке в аул, пахло баурсаками.'), 'День в ауле с бабушкой');
+  assert.equal(title('Первый снег в Астане, шла одна домой.'), 'Зимний день в Астане под снегом');
+  assert.equal(title('Встречали Новый год с друзьями на даче.'), 'Новый год на даче с друзьями');
+});
+
+test('apathy and nerves read as what they are', () => {
+  const apathy = readText('Долго лежала и смотрела в потолок. Ничего не хотелось.');
+  assert.ok(apathy.valence < 0 && apathy.arousal < 0);
+  const nerves = readText('Первое свидание, очень волновался.');
+  assert.ok(nerves.arousal > 0);
+  assert.ok(!nerves.hits.includes('волн'));
+  assert.ok(readText('Best morning ever!').valence > 0.3);
+});

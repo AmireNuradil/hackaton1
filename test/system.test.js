@@ -79,3 +79,11 @@ test('on a borderline day the song alone can move the page into another techniqu
   assert.notEqual(slow.technique, fast.technique);
   assert.equal(fast.technique, 'kandinsky');
 });
+
+test('a lively song cuts quickly: more, shorter shots instead of stretched frames', () => {
+  const lively = day('Весь день танцевали с друзьями, смеялись!', music('fast', 'intense', 'major')).design.rhythm;
+  const quiet = day(calm, music('slow', 'soft', 'major')).design.rhythm;
+  assert.ok(lively.sceneSeconds < 3.5, `${lively.sceneSeconds}s`);
+  assert.ok(lively.scenes > quiet.scenes);
+  assert.ok(lively.seconds >= 15 && lively.seconds <= 45);
+});

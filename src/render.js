@@ -1,4 +1,5 @@
 // Paints a diary page on a 1080×1350 canvas. Constant frame + a technique chosen by the rules.
+import { hslToRgb, rgbToHsl } from './photo.js';
 import { TECHNIQUES } from './system.js';
 
 export const PAGE = { width: 1080, height: 1350, margin: 72 };
@@ -139,33 +140,35 @@ function monetPlate(image, w, h, design, random) {
   return { plate, light };
 }
 
+// Pointillism the way Seurat built it: a softened colour ground, then dense dots of vivid colour, with small
+// dots of the complementary hue mixed in so the eye blends them into a shimmer.
 function seuratPlate(image, w, h, design, random) {
   const plate = canvas(w, h);
   const ctx = plate.getContext('2d');
   const s = sampler(image, w / 4, h / 4);
-  ctx.fillStyle = rgb(mix(PAPER, design.palette[0], 0.12));
+  ctx.filter = 'blur(14px) saturate(0.8) brightness(1.08)';
+  ctx.drawImage(s.canvas, -24, -24, w + 48, h + 48);
+  ctx.filter = 'none';
+  ctx.fillStyle = rgb(mix(PAPER, design.palette[0], 0.25), 0.35);
   ctx.fillRect(0, 0, w, h);
   const r = design.texture.dot;
-  const step = r * 1.55;
+  const step = r * 1.3;
   const dots = [];
-  for (let y = 0; y < h; y += step) {
-    for (let x = (y / step) % 2 ? step / 2 : 0; x < w; x += step) {
-      const edge = Math.min(x, y, w - x, h - y) / 60;
-      if (edge < 1 && random() > edge) continue;
-      const px = x + (random() - 0.5) * step * 0.6;
-      const py = y + (random() - 0.5) * step * 0.6;
-      const color = toPalette(design.palette, s.at(px / 4, py / 4), 0.3);
-      const [cr, cg, cb] = color;
-      const max = Math.max(cr, cg, cb);
-      const vivid = color.map((v) => clamp(Math.round(v + (v === max ? 16 : -8)), 0, 255));
-      ctx.fillStyle = rgb(vivid);
+  for (let y = 0; y < h + step; y += step) {
+    for (let x = (Math.round(y / step) % 2) ? step / 2 : 0; x < w + step; x += step) {
+      const px = x + (random() - 0.5) * step * 0.7;
+      const py = y + (random() - 0.5) * step * 0.7;
+      const base = toPalette(design.palette, s.at(px / 4, py / 4), 0.25);
+      const [hue, sat, light] = rgbToHsl(base);
+      const vivid = hslToRgb([hue + (random() - 0.5) * 18, clamp(sat * 1.25 + 0.12, 0, 0.95), clamp(light + (random() - 0.5) * 0.12, 0.08, 0.92)]);
+      ctx.fillStyle = rgb(vivid, 0.92);
       ctx.beginPath();
-      ctx.arc(px, py, r * (0.75 + random() * 0.35), 0, Math.PI * 2);
+      ctx.arc(px, py, r * (0.62 + random() * 0.3), 0, Math.PI * 2);
       ctx.fill();
-      if (random() < 0.22) {
-        ctx.fillStyle = rgb(mix(vivid, [255, 244, 220], 0.55), 0.85);
+      if (random() < 0.16) {
+        ctx.fillStyle = rgb(hslToRgb([hue + 180, clamp(sat * 0.9 + 0.2, 0, 0.8), clamp(light, 0.25, 0.75)]), 0.6);
         ctx.beginPath();
-        ctx.arc(px + r * 0.7, py - r * 0.5, r * 0.4, 0, Math.PI * 2);
+        ctx.arc(px + r * 0.55, py - r * 0.45, r * 0.34, 0, Math.PI * 2);
         ctx.fill();
       }
       if (random() < 0.06) dots.push({ x: px, y: py, color: vivid, phase: Math.floor(random() * 4) });
@@ -202,22 +205,37 @@ function kandinskyPlate(image, w, h, design, random) {
   return { plate, shapes };
 }
 
+// Sumi-e: the photo becomes ink on paper with its full tonal range, and only its brightest coloured lights
+// keep a single colour — the day's accent — the way ink painting allows one touch of colour.
 function maPlate(image, w, h, design) {
   const plate = canvas(w, h);
   const ctx = plate.getContext('2d', { willReadFrequently: true });
   coverDraw(ctx, image, w, h);
   const pixels = ctx.getImageData(0, 0, w, h);
-  const tint = design.palette[0];
-  const ink = [34, 34, 38];
-  const paper = mix(PAPER, tint, 0.06);
+  const data = pixels.data;
+  const lumas = new Float32Array(w * h);
+  for (let i = 0; i < lumas.length; i++) lumas[i] = (0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]) / 255;
+  const sorted = Float32Array.from(lumas).sort();
+  const low = sorted[Math.floor(sorted.length * 0.04)];
+  const high = sorted[Math.floor(sorted.length * 0.97)];
+  const span = Math.max(0.05, high - low);
+  const ink = [30, 30, 34];
+  const paper = mix(PAPER, design.palette[0], 0.05);
+  const wash = mix(ink, paper, 0.62);
+  const accent = design.accent;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      const l = (0.2126 * pixels.data[i] + 0.7152 * pixels.data[i + 1] + 0.0722 * pixels.data[i + 2]) / 255;
-      const wash = clamp(l * 1.7 + 0.18, 0, 1) ** 0.55;
-      const edge = clamp(Math.min(x, y, w - x, h - y) / (Math.min(w, h) * 0.16), 0, 1);
-      const tone = mix(mix(ink, mix(tint, paper, 0.55), wash), paper, (1 - edge) ** 1.6);
-      pixels.data[i] = tone[0]; pixels.data[i + 1] = tone[1]; pixels.data[i + 2] = tone[2];
+      const index = y * w + x;
+      const i = index * 4;
+      const tone = clamp((lumas[index] - low) / span, 0, 1);
+      // Three ink densities, softly blended: deep ink, grey wash, bare paper.
+      let color = tone < 0.5 ? mix(ink, wash, (tone / 0.5) ** 0.9) : mix(wash, paper, ((tone - 0.5) / 0.5) ** 0.7);
+      const [, saturation] = rgbToHsl([data[i], data[i + 1], data[i + 2]]);
+      const glow = clamp((tone - 0.78) / 0.22, 0, 1) * clamp((saturation - 0.18) / 0.4, 0, 1);
+      if (glow > 0) color = mix(color, accent, glow * 0.75);
+      const edge = clamp(Math.min(x, y, w - x, h - y) / (Math.min(w, h) * 0.14), 0, 1);
+      color = mix(color, paper, (1 - edge) ** 1.8);
+      data[i] = color[0]; data[i + 1] = color[1]; data[i + 2] = color[2];
     }
   }
   ctx.putImageData(pixels, 0, 0);
