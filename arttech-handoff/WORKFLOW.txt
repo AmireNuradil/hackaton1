@@ -6,7 +6,7 @@ only after deciding where it will be used in the demo. Use ImageGen for fictiona
 refs or visuals. Use team photos with permission when presenting a real story.
 
 Laptop 2 — Claude Opus 5.5 in Claude Code
-Read CLAUDE-TASK.txt on arttech/demo-handoff. Implement the task in a separate
+Read CLAUDE-TASK.txt on main. Implement the task in a separate
 branch and bring it back as a draft PR. Include test output and the exact browser
 steps that show the change. Keep the art and story linked to the PR.
 

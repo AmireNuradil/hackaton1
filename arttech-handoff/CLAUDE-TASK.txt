@@ -29,6 +29,6 @@ Acceptance
 4. Run npm test and npm run build. Check desktop and a narrow/mobile viewport.
 
 Delivery
-Start from arttech/demo-handoff. Use a separate implementation branch and open a
-draft PR targeting arttech/demo-handoff. Return the PR link, exact commit, test
+Start from main. Use a separate implementation branch and open a
+draft PR targeting main. Return the PR link, exact commit, test
 output and browser reproduction steps. Leave the merge to the team.
