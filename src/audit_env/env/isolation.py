@@ -14,7 +14,8 @@ from audit_env.env.audit_env import AuditEnv, EnvConfig
 from audit_env.schemas import PUBLIC_FILES, json_text
 
 _FILE_LIMIT = 2 * 1024 * 1024
-_ACTION_LIMIT = 256 * 1024
+# Thirty 1,000-character explanations can take 360 KB with ASCII JSON escapes.
+_ACTION_LIMIT = 1024 * 1024
 _WIRE_LIMIT = 64 * 1024 * 1024
 _WORKER = (
     "import sys; sys.path.insert(0,sys.argv[1]); "

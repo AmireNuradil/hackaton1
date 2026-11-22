@@ -7,7 +7,9 @@ import pytest
 
 from audit_env.env.audit_env import AuditEnv, EnvConfig
 from audit_env.env.isolation import IsolatedAuditEnv
+from audit_env.evaluator.session import EvaluatedAuditEnv
 from audit_env.generator.world import GeneratorConfig, encode_public, generate, write_episode
+from audit_env.policies.oracle_policy import OraclePolicy
 from audit_env.schemas import PUBLIC_FILES, TABLES, json_text
 
 
@@ -247,3 +249,41 @@ def test_controller_seed_is_deterministic_and_supports_reset():
         assert env.reset(seed=17) == first
         assert env.step({"action": "list_records", "table": "ledger", "limit": 1}) == page
         assert env.reset(seed=18)[0]["manifest"]["episode_id"] != first[0]["manifest"]["episode_id"]
+
+
+@pytest.mark.parametrize("training", [False, True])
+def test_evaluator_returns_terminal_reward_only_in_training(episode, training):
+    with EvaluatedAuditEnv(encode_public(episode), episode.truth, training=training) as env:
+        initial, _ = env.reset()
+        oracle = OraclePolicy(episode.truth)
+        oracle.reset(initial)
+        assert env.step({"action": "calculator", "expression": "0"})[1] == 0.0
+        assert env.evaluation is None
+        assert env.step(oracle.act(initial)) == (
+            {"remaining_steps": 98}, 0.998 if training else 0.0, True, False, {"status": "finished"},
+        )
+        assert env.evaluation.f1 == 1.0 and env.evaluation.reward == 0.998
+        assert env.step(None)[1] == 0.0
+        assert env.evaluation.reward == 0.998
+
+        env.reset()
+        assert env.evaluation is None
+        assert env.step({"action": "submit"}) == (
+            {"remaining_steps": 99}, -1.0 if training else 0.0, True, False, {"status": "finished"},
+        )
+        assert env.evaluation.status == "malformed" and env.evaluation.reward == -1.0
+
+        env.reset(config=EnvConfig(max_steps=1))
+        assert env.step(None)[1:4] == (-1.0 if training else 0.0, False, True)
+        assert env.evaluation.status == "truncated" and env.evaluation.reward == -1.0
+
+
+def test_maximum_length_unicode_explanations_survive_transport(episode):
+    with IsolatedAuditEnv(public_files=encode_public(episode)) as env:
+        initial, _ = env.reset()
+        oracle = OraclePolicy(episode.truth)
+        oracle.reset(initial)
+        finding = oracle.act(initial)["findings"]["findings"][0]
+        finding["explanation"] = "💳" * 1000
+        action = submit(oracle.episode_id, findings=[finding] * 30)
+        assert env.step(action)[1:4] == (0.0, True, False)

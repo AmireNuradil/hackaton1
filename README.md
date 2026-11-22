@@ -93,7 +93,21 @@ PY
 
 ## Оценка и повторная генерация
 
-При исследовании и корректном `submit` среда возвращает `0.0`. Структурно неверный `submit` возвращает `−1.0` сразу. Оценщик после прогона вычисляет P, R, F1 и итоговую награду `clip(2 × F1 − 1 − 0.002 × inspection_steps, −1, 1)`. При пропуске `submit` итоговая награда оценщика равна `−1.0` и отправленные выводы отсутствуют. Допуск суммы по умолчанию составляет 0 минимальных единиц.
+Оценщик вычисляет P, R, F1 и итоговую награду `clip(2 × F1 − 1 − 0.002 × inspection_steps, −1, 1)`. При структурно неверной подаче или прерывании эпизода оценщик фиксирует награду `−1.0`. Допуск суммы по умолчанию составляет 0 минимальных единиц.
+
+`EvaluatedAuditEnv(public_files, truth)` работает на стороне оценщика. В слепом режиме все вызовы `step` возвращают агенту `0.0`, а полная оценка доступна оценщику в `env.evaluation` после завершения. В открытом режиме `training=True` последний шаг возвращает терминальную награду в той же позиции кортежа. Контроллер должен передавать агенту только результаты JSON-вызовов `reset` и `step`. `IsolatedAuditEnv` выполняет проверку структуры ответа, для которой `−1.0` означает структурную ошибку.
+
+```python
+from audit_env.evaluator.session import EvaluatedAuditEnv
+from audit_env.generator.world import encode_public, generate
+
+episode = generate(42)
+with EvaluatedAuditEnv(encode_public(episode), episode.truth, training=True) as env:
+    observation, _ = env.reset()
+    submission = {"episode_id": observation["manifest"]["episode_id"], "findings": []}
+    _, reward, terminated, truncated, _ = env.step({"action": "submit", "findings": submission})
+    assert (reward, terminated, truncated) == (1.0, True, False)
+```
 
 ```bash
 PYTHONPATH=src python3.11 -m audit_env.runner generate --data /tmp/fresh-audit-data
@@ -101,5 +115,19 @@ PYTHONPATH=src python3.11 -m audit_env.runner benchmark --trajectories /tmp/audi
 ```
 
 Первую строку каждой траектории записывают с `step=0` и `action=null`. Судейский балл добавляется в терминальную строку после проверки. Показатели и статусы сохраняются через `--judge-log`, а эталонные действия Oracle остаются в судейском прогоне.
+
+## Демо
+
+```bash
+PYTHONPATH=src python3.11 -m audit_env.runner demo
+```
+
+Для собранного выше образа используйте ту же изоляцию и запустите модуль напрямую:
+
+```bash
+docker run --rm --network none --cpus=2 --memory=4g --cap-drop=ALL --cap-add=SYS_CHROOT --cap-add=SETUID --cap-add=SETGID --security-opt=no-new-privileges -e PYTHONPATH=/app/src --entrypoint python fintech-audit-rl -m audit_env.runner demo
+```
+
+Команда показывает два dev-эпизода. В первом платёж в USD частично распределён, а проводка в KZT отнесена к следующему периоду. На экране будут два вывода, документ платежа, строка проводки и граница периода. Во втором книги чистые, хотя содержат разбитые платежи и возврат. Для обоих эпизодов выводятся P, R, F1, награда, шаги и время всех четырёх политик.
 
 Подробности реализации, результаты замеров и ограничения приведены в [DESIGN_NOTE.md](DESIGN_NOTE.md).

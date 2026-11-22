@@ -9,15 +9,14 @@ from pathlib import Path
 from statistics import mean
 from time import perf_counter
 
-from audit_env.env.isolation import IsolatedAuditEnv, read_public_files
-from audit_env.env.tools import PublicRecords
-from audit_env.evaluator.reward import evaluate
+from audit_env.env.isolation import read_public_files
+from audit_env.evaluator.session import EvaluatedAuditEnv
 from audit_env.generator.world import CASE_TYPES, GeneratorConfig, generate, write_episode
 from audit_env.policies.flag_all_policy import FlagAllAttack
 from audit_env.policies.oracle_policy import OraclePolicy
 from audit_env.policies.random_policy import RandomExplorer
 from audit_env.policies.recon_policy import SimpleReconciler
-from audit_env.schemas import json_text
+from audit_env.schemas import TABLES, json_text
 
 SPLITS = ("train", "dev")
 POLICIES = (RandomExplorer, SimpleReconciler, FlagAllAttack)
@@ -71,18 +70,20 @@ def rollout(env, policy):
 
 def run_episode(files, truth, policy):
     started = perf_counter()
-    public = PublicRecords(files)
-    with IsolatedAuditEnv(public_files=files) as env:
+    with EvaluatedAuditEnv(files, truth) as env:
         trace = rollout(env, policy)
-        inspections = env.inspection_steps
+        result = env.evaluation
     last = trace[-1]
-    payload = last["action"].get("findings") if last["terminated"] and last["reward"] == 0.0 else None
-    result = evaluate(payload, last["episode_id"], truth, public.evidence_ids(), inspections,
-                      truncated=last["truncated"], tolerance_minor=public.policy["amount_tolerance_minor"])
     last["reward"] = result.reward
     metrics = {**asdict(result), "episode_id": last["episode_id"], "policy": type(policy).__name__,
                "steps": last["step"], "seconds": perf_counter() - started}
     return trace, metrics
+
+
+def read_episode(data, split, label):
+    files = read_public_files(data / split / "public" / label)
+    truth_path = data / split / "private" / label / "truth.json"
+    return files, json.loads(truth_path.read_text(encoding="utf-8"))
 
 
 def benchmark(data, trajectory_path, judge_log=None):
@@ -91,9 +92,7 @@ def benchmark(data, trajectory_path, judge_log=None):
     metrics = []
     with trajectory_path.open("w", encoding="utf-8", newline="\n") as output:
         for split, label, _, _ in episode_configs():
-            files = read_public_files(data / split / "public" / label)
-            truth_path = data / split / "private" / label / "truth.json"
-            truth = json.loads(truth_path.read_text(encoding="utf-8"))
+            files, truth = read_episode(data, split, label)
             for policy in (*(new() for new in POLICIES), OraclePolicy(truth)):
                 trace, result = run_episode(files, truth, policy)
                 metrics.append({"split": split, "label": label, **result})
@@ -103,6 +102,31 @@ def benchmark(data, trajectory_path, judge_log=None):
     if judge_log is not None:
         judge_log.write_text("".join(json_text(row) + "\n" for row in metrics), encoding="utf-8")
     return metrics
+
+
+def demo(data):
+    for label, description in (("06", "Cross-currency partial allocation at period close"),
+                               ("01", "Clean books with split payments and a refund")):
+        files, truth = read_episode(data, "dev", label)
+        print(f"\nDev {label} • {description}")
+        for policy in (*(new() for new in POLICIES), OraclePolicy(truth)):
+            trace, result = run_episode(files, truth, policy)
+            print("{policy:17}  P {precision:.3f}  R {recall:.3f}  F1 {f1:.3f}  "
+                  "return {reward:+.3f}  steps {steps:2}  {seconds:.3f}s".format(**result))
+            if isinstance(policy, SimpleReconciler):
+                findings = trace[-1]["action"]["findings"]["findings"]
+                for finding in findings:
+                    print(f"  {finding['type']}  {finding['claimed_amount_minor']} minor {finding['currency']}")
+                    print(f"  {finding['explanation']}")
+                cited = {key for finding in findings for key in finding["evidence_ids"]}
+                if cited:
+                    print(f"  Period ends at {trace[0]['observation']['policy']['period_end']}")
+                for step in trace[1:-1]:
+                    page = step["observation"]["result"]
+                    for record in page["records"]:
+                        key = record.get("doc_id", record[TABLES[page["table"]]])
+                        if key in cited:
+                            print(f"  {page['table']} {json_text(record)}")
 
 
 def summarize(metrics):
@@ -141,11 +165,14 @@ def verify(data, judge_log=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("generate", "verify", "benchmark"))
+    parser.add_argument("command", choices=("generate", "verify", "benchmark", "demo"))
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--trajectories", type=Path, help="Trajectory output (required for standalone benchmarking)")
     parser.add_argument("--judge-log", type=Path, help="Optional private per-episode JSONL diagnostics")
     args = parser.parse_args(argv)
+    if args.command == "demo":
+        demo(args.data)
+        return 0
     if args.command == "generate":
         build_data(args.data)
         metrics = benchmark(args.data, args.data / "trajectories.jsonl", args.judge_log)

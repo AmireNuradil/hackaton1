@@ -5,7 +5,13 @@ from decimal import Decimal
 
 import pytest
 
-from audit_env.generator.world import CASE_TYPES, COMBINATIONS, GeneratorConfig, generate
+from audit_env.generator.permuter import permute
+from audit_env.generator.world import CASE_TYPES, COMBINATIONS, GeneratorConfig, encode_public, generate
+from audit_env.policies.flag_all_policy import FlagAllAttack
+from audit_env.policies.oracle_policy import OraclePolicy
+from audit_env.policies.random_policy import RandomExplorer
+from audit_env.policies.recon_policy import SimpleReconciler
+from audit_env.runner import run_episode
 from audit_env.schemas import ISSUE_TYPES, TABLES, fx_id, parse_offset, parse_time
 
 
@@ -159,3 +165,61 @@ def test_compound_issues_share_the_same_transaction():
     assert payment.truth[1]["currency"] == "KZT"
     duplicate = generate(12, GeneratorConfig(cases=("foreign_duplicate_fx",)))
     assert set(duplicate.truth[1]["affected_ids"]) < set(duplicate.truth[0]["affected_ids"])
+
+
+REHEARSAL_CASES = (
+    ((),) * 5
+    + (
+        ("foreign_payment_cutoff", "fx_mismatch"),
+        ("foreign_duplicate_fx", "unallocated_payment"),
+        ("foreign_payment_cutoff", "foreign_duplicate_fx"),
+        ("cutoff_error", "foreign_payment_cutoff", "foreign_payment_cutoff"),
+        ("foreign_duplicate_fx", "duplicate_invoice", "foreign_payment_cutoff"),
+    )
+    + (
+        ("unallocated_payment", "duplicate_invoice"),
+        ("cutoff_error", "duplicate_invoice"),
+        ("fx_mismatch", "fx_mismatch"),
+        ("unallocated_payment", "unallocated_payment"),
+        ("duplicate_invoice", "duplicate_invoice", "cutoff_error"),
+        ("cutoff_error", "fx_mismatch", "unallocated_payment"),
+        ("unallocated_payment", "cutoff_error") * 3,
+        ("fx_mismatch", "duplicate_invoice") * 4,
+        ("cutoff_error", "fx_mismatch", "duplicate_invoice") * 3,
+        tuple(ISSUE_TYPES) * 3,
+    )
+)
+
+
+@pytest.mark.parametrize("index", range(len(REHEARSAL_CASES)))
+def test_judge_rehearsal_on_new_configs_and_id_order_pairs(index):
+    cases = REHEARSAL_CASES[index]
+    offsets = ("+14:00", "-11:00", "+05:45", "-03:30", "+00:00")
+    dates = ("2026-12-15", "2028-02-01", "2027-01-31", "2027-04-21")
+    config = GeneratorConfig(
+        rows=2000 if index == 19 else 200 + index * 89,
+        documents=200 if index == 19 else 20 + index * 9,
+        first_day=dates[index % len(dates)], timezone=offsets[index % len(offsets)], cases=cases,
+    )
+    seed = 7919 + index * 1531
+    episode = generate(seed, config)
+    renamed, _ = permute(episode, seed + 1)
+    for variant in (episode, renamed):
+        assert_clean_relationships(variant)
+        assert len(variant.truth) == sum(len(COMBINATIONS.get(case, (case,))) for case in cases)
+        records = by_evidence(variant)
+        for issue in variant.truth:
+            assert issue["acceptable_evidence_sets"]
+            for evidence in issue["acceptable_evidence_sets"]:
+                assert_public_proof(variant, issue, evidence, records)
+        _, oracle = run_episode(encode_public(variant), variant.truth, OraclePolicy(variant.truth))
+        assert (oracle["reward"], oracle["tp"], oracle["fp"], oracle["fn"]) == (1.0, len(variant.truth), 0, 0)
+
+    files = encode_public(episode)
+    for policy in (SimpleReconciler(), RandomExplorer(), FlagAllAttack()):
+        _, result = run_episode(files, episode.truth, policy)
+        assert result["steps"] <= 100 and result["status"] == "submitted"
+        if isinstance(policy, SimpleReconciler):
+            assert (result["tp"], result["fp"], result["fn"]) == (len(episode.truth), 0, 0)
+        elif isinstance(policy, FlagAllAttack):
+            assert result["reward"] < 0
