@@ -161,6 +161,11 @@ async function main() {
   await page.waitForSelector('body[data-ready=true]');
   await page.getByLabel('Показать').selectOption('mine');
   assert.equal(await page.locator('.day').count(), 2);
+  // Search matches other forms of a word: «море» finds «у моря».
+  await page.getByLabel('Показать').selectOption('all');
+  await page.getByLabel('Поиск по записям').fill('море');
+  assert.ok(await page.locator('.day-title', { hasText: 'Вечер у моря с подругой' }).count() === 1, 'море finds у моря');
+  await page.getByLabel('Показать').selectOption('mine');
   await page.getByLabel('Поиск по записям').fill('автобус');
   await page.locator('.day-button').first().click();
   await page.locator('#viewer-title').filter({ hasText: 'Вечер в автобусе под дождём' }).waitFor();

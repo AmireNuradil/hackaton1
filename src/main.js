@@ -141,13 +141,18 @@ function renderChips() {
 
 function renderFeed() {
   const filter = $('feed-filter').value;
-  const query = $('feed-search').value.trim().toLocaleLowerCase('ru');
+  // Russian words change their endings («море», «у моря», «морем»), so each word is matched by its stem.
+  const stem = (word) => (word.length > 4 ? word.slice(0, -2) : word.length > 3 ? word.slice(0, -1) : word);
+  const terms = $('feed-search').value.trim().toLocaleLowerCase('ru').replaceAll('ё', 'е').split(/\s+/).filter(Boolean).map(stem);
   const number = numbers();
   const list = [...days]
     .sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created)
     .filter((day) => filter === 'all' || (filter === 'samples') === Boolean(day.example))
     .filter((day) => technique === 'all' || day.design.technique === technique)
-    .filter((day) => !query || `${day.design.title} ${day.text} ${day.music.title ?? ''}`.toLocaleLowerCase('ru').includes(query));
+    .filter((day) => {
+      const haystack = `${day.design.title} ${day.text} ${day.music.title ?? ''}`.toLocaleLowerCase('ru').replaceAll('ё', 'е');
+      return terms.every((term) => haystack.includes(term));
+    });
   $('days').replaceChildren(...list.map((day) => card(day, number.get(day.id))));
   maps.diary ??= createMoodMap($('diary-map'), { label: 'Карта дневника: все дни' });
   maps.diary.update({ days, onSelect: openViewer });
