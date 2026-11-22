@@ -113,9 +113,11 @@ export function composeDay({ text, date, reading, photo, music, photoCount }) {
   const captions = (lines.length ? lines : [text.trim()]).slice(0, 6)
     .map((line) => (Array.from(line).length > 110 ? `${Array.from(line).slice(0, 108).join('').trimEnd()}…` : line));
   const scenes = Math.max(3, photoCount, captions.length);
-  let sceneSeconds = clamp(beatsPerScene * beat, 2.2, 9);
-  if (scenes * sceneSeconds > 45) sceneSeconds = 45 / scenes;
-  if (scenes * sceneSeconds < 15) sceneSeconds = 15 / scenes;
+  // Frames last a whole number of beats: the nearest phrase length that keeps a frame within 2.2–9 s
+  // and the page within 15–45 s. Only songs with no beat at all fall back to plain clamping.
+  const fits = (beats) => beats * beat >= 2.2 && beats * beat <= 9 && scenes * beats * beat >= 15 && scenes * beats * beat <= 45;
+  const phrase = [2, 4, 6, 8, 12, 16, 24, 32].filter(fits).sort((a, b) => Math.abs(a - beatsPerScene) - Math.abs(b - beatsPerScene))[0];
+  const sceneSeconds = phrase ? phrase * beat : clamp(clamp(beatsPerScene * beat, 2.2, 9), 15 / scenes, 45 / scenes);
   const transition = technique === 'kandinsky' ? 90 : Math.round(lerp(1900, 260, (mood.arousal + 1) / 2));
   const energy = music.energy;
   const design = {
@@ -127,7 +129,7 @@ export function composeDay({ text, date, reading, photo, music, photoCount }) {
     palette: paletteFor(photo, mood, technique, music),
     accent: accentFor(technique, mood),
     rhythm: {
-      bpm: music.bpm, beat: round(beat, 3), beatsPerScene, scenes,
+      bpm: music.bpm, beat: round(beat, 3), beatsPerScene: phrase ?? beatsPerScene, scenes,
       sceneSeconds: round(sceneSeconds), seconds: round(scenes * sceneSeconds, 1), transition,
     },
     motion: { zoom: round(1.03 + 0.13 * (mood.arousal + 1) / 2, 3), pulse: round(clamp(energy * 1.2, 0.1, 1)), drift: round(lerp(1, 0.35, (mood.arousal + 1) / 2)) },

@@ -404,6 +404,7 @@ async function openViewer(day) {
   $('play-day').textContent = '▶ Смотреть';
   viewer.showModal();
   const canvas = $('viewer-canvas');
+  canvas.setAttribute('aria-label', `Страница дня «${design.title}», ${t.name.toLowerCase()}. ${design.captions.join(' ')}`);
   const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id) });
   if (view.day !== day) return;
   view.painter = painter;
