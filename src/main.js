@@ -1,39 +1,37 @@
-import '@fontsource-variable/dm-sans/wght.css';
-import '@fontsource-variable/playfair-display';
+import '@fontsource-variable/cormorant-garamond/wght.css';
+import '@fontsource-variable/cormorant-garamond/wght-italic.css';
+import '@fontsource-variable/caveat/wght.css';
+import '@fontsource-variable/manrope/wght.css';
 import './style.css';
-import { compose, dateLabel, framing, localDate, moods, safeLink } from './compose.js';
-import { examples } from './examples.js';
-import { exportDay } from './export.js';
-import { analyzeAudio, combinePalettes, MAX_AUDIO_SIZE, MAX_PHOTOS, MAX_PHOTO_SIZE, readPalette } from './media.js';
-import { fetchDays, saveDay } from './store.js';
+import { folderFiles, writeFolder, zipFolder } from './folder.js';
+import { analyzeAudio, loadImage, MAX_AUDIO_SIZE, MAX_PHOTO_SIZE, MAX_PHOTOS, readImage } from './media.js';
+import { describedMusic, GENRES } from './music.js';
+import { buildDay } from './pipeline.js';
+import { createPainter, dateLine, loadFonts, posterTime } from './render.js';
+import { SAMPLES } from './samples.js';
+import { fetchDays, deleteDay, saveDay } from './store.js';
+import { CONSTANTS, TECHNIQUES } from './system.js';
+import { recordMemory, videoType } from './video.js';
+import { canSpeak, speak } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
 const editor = $('editor');
 const viewer = $('viewer');
-const scene = $('scene');
-const soundtrack = $('soundtrack');
 const form = $('entry-form');
-const photosInput = $('entry-photos');
-const soundToggle = $('sound-toggle');
-const archiveStatus = $('archive-status');
-const viewerMessage = $('viewer-message');
-const blobUrls = new Map();
-let days = [...examples];
-let activeDay;
+const audio = $('soundtrack');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const sampleUrl = (path) => new URL(`samples/${path}`, document.baseURI).href;
+
+let days = [];
+let storeError = false;
 let selectedPhotos = [];
 let previewUrls = [];
-let saving = false;
-let storeError = false;
-let mute = false;
-let frame = 0;
-let last = 0;
-let elapsed = 0;
-let playing = false;
-let shots = [];
-let shotIndex = 0;
+let busy = false;
+let technique = 'all';
+const posters = new Map();
+const imageCache = new Map();
 
-const dateFormat = { month: 'long', day: 'numeric', year: 'numeric' };
-const assetUrl = (path) => new URL(`memories/${path}`, document.baseURI).href;
+const view = { day: null, painter: null, frame: 0, start: 0, playing: false, muted: false, stopVoice: null, voiceOn: false };
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -42,346 +40,495 @@ function node(tag, className, text) {
   return element;
 }
 
-function showMessage(element, message) {
-  element.textContent = message;
+function show(element, message) {
+  element.textContent = message ?? '';
   element.hidden = !message;
 }
 
-function dateNode(date, className, options = dateFormat) {
-  const time = node('time', className, dateLabel(date, options));
-  time.dateTime = date;
-  return time;
+function mediaSource(media) {
+  return media.blob ?? sampleUrl(media.path);
 }
 
-function mediaUrl(media) {
-  if (!media.blob) return assetUrl(media.path);
-  if (!blobUrls.has(media.blob)) blobUrls.set(media.blob, URL.createObjectURL(media.blob));
-  return blobUrls.get(media.blob);
+async function imagesFor(day) {
+  if (!imageCache.has(day.id)) imageCache.set(day.id, Promise.all(day.photos.map((photo) => loadImage(mediaSource(photo)))));
+  return imageCache.get(day.id);
 }
 
-function imageFor(photo, className, lazy = false) {
-  const image = node('img', className);
-  image.src = mediaUrl(photo);
-  image.alt = '';
-  image.decoding = 'async';
-  if (lazy) image.loading = 'lazy';
-  return image;
+function numbers() {
+  const ordered = [...days].sort((a, b) => a.date.localeCompare(b.date) || a.created - b.created);
+  return new Map(ordered.map((day, index) => [day.id, index + 1]));
 }
 
-function playIcon() {
-  const icon = node('span', 'play');
-  icon.setAttribute('aria-hidden', 'true');
-  return icon;
+async function posterFor(day) {
+  if (posters.has(day.id)) return posters.get(day.id);
+  const promise = (async () => {
+    if (day.poster) return URL.createObjectURL(day.poster);
+    const canvas = document.createElement('canvas');
+    const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id) });
+    painter.draw(posterTime(day.design));
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.86));
+    return URL.createObjectURL(blob);
+  })();
+  posters.set(day.id, promise);
+  return promise;
 }
 
-function renderFeatured(day) {
-  const image = imageFor(day.photos[0], 'feature-image');
-  image.fetchPriority = 'high';
-  const heading = node('h2', 'feature-title', day.design.title);
-  const label = node('p', 'feature-tag');
-  const dot = node('span');
-  dot.style.background = `rgb(${day.design.accent.join(' ')})`;
-  label.append(dot, `${moods[day.design.mood].label} · ${day.design.seconds} sec`);
-  const copy = node('div', 'feature-copy');
-  copy.append(heading, label);
-  const button = node('button', 'button', 'Play memory');
-  button.type = 'button';
-  button.prepend(playIcon());
-  button.addEventListener('click', () => openViewer(day, true));
-  $('feature').replaceChildren(image, dateNode(day.date, 'feature-date'), copy, button);
-  $('journal-date').textContent = dateLabel(day.date, { month: 'long', year: 'numeric' });
+async function posterBlob(day) {
+  const canvas = document.createElement('canvas');
+  const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id) ?? days.length + 1 });
+  painter.draw(posterTime(day.design));
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
-function archiveCard(day) {
-  const button = node('button', 'entry');
+// ——— Samples: the same pipeline as the author's own days ———
+
+async function sampleDay(sample) {
+  const photos = sample.photos.map((path) => ({ path, name: path }));
+  const images = await Promise.all(photos.map((photo) => loadImage(sampleUrl(photo.path))));
+  const response = await fetch(sampleUrl(sample.song));
+  const measured = await analyzeAudio(await response.arrayBuffer());
+  const music = { source: 'sample', path: sample.song, name: sample.song, title: sample.title, genre: sample.genre, year: sample.year, ...measured };
+  const day = buildDay({ id: sample.id, date: sample.date, text: sample.text, photos, photoReadings: images.map(readImage), music, created: 0, example: true });
+  imageCache.set(day.id, Promise.resolve(images));
+  return day;
+}
+
+// ——— Feed ———
+
+function card(day, number) {
+  const item = node('li', 'day');
+  const button = node('button', 'day-button');
   button.type = 'button';
   button.dataset.day = day.id;
-  const imageWrap = node('span', 'entry-image-wrap');
-  const iconWrap = node('span', 'entry-play');
-  iconWrap.append(playIcon());
-  imageWrap.append(imageFor(day.photos[0], 'entry-image', true), iconWrap);
-  const info = node('span', 'entry-info');
-  const meta = node('span', 'entry-meta');
-  meta.append(dateNode(day.date, '', { month: 'short', day: 'numeric', year: 'numeric' }), node('span', '', moods[day.design.mood].label));
-  info.append(meta, node('span', 'entry-title', day.design.title));
-  button.append(imageWrap, info);
+  const frame = node('span', 'day-poster');
+  const image = node('img');
+  image.alt = '';
+  image.loading = 'lazy';
+  posterFor(day).then((url) => { image.src = url; }).catch(() => {});
+  frame.append(image);
+  const meta = node('span', 'day-meta');
+  meta.append(node('span', '', `№${String(number).padStart(2, '0')} · ${dateLine(day.date)}`), node('span', 'day-technique', TECHNIQUES[day.design.technique].short));
+  const title = node('span', 'day-title', day.design.title);
+  const folder = node('span', 'day-folder', day.folder);
+  button.append(frame, meta, title, folder);
   button.addEventListener('click', () => openViewer(day));
-  return button;
+  item.append(button);
+  return item;
 }
 
-function renderArchive() {
-  const filter = $('entry-filter').value;
-  const records = days.filter((day) => filter === 'all' || (filter === 'examples') === Boolean(day.example));
-  $('entries').replaceChildren(...records.map(archiveCard));
-  $('entry-count').textContent = `${records.length} ${records.length === 1 ? 'day' : 'days'}`;
-  showMessage(archiveStatus, storeError ? 'Browser storage is unavailable. Sample memories are still available.' : records.length ? '' : 'Your saved memories will appear here.');
+function renderChips() {
+  const chips = [['all', 'Все приёмы'], ...Object.entries(TECHNIQUES).map(([id, t]) => [id, t.name])].map(([id, label]) => {
+    const button = node('button', 'chip', label);
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(id === technique));
+    button.addEventListener('click', () => { technique = id; renderChips(); renderFeed(); });
+    return button;
+  });
+  $('technique-filter').replaceChildren(...chips);
 }
 
-function renderJournal() {
-  days.sort((a, b) => b.date.localeCompare(a.date) || (b.created ?? 0) - (a.created ?? 0));
-  renderFeatured(days[0]);
-  renderArchive();
+function renderFeed() {
+  const filter = $('feed-filter').value;
+  const query = $('feed-search').value.trim().toLocaleLowerCase('ru');
+  const number = numbers();
+  const list = [...days]
+    .sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created)
+    .filter((day) => filter === 'all' || (filter === 'samples') === Boolean(day.example))
+    .filter((day) => technique === 'all' || day.design.technique === technique)
+    .filter((day) => !query || `${day.design.title} ${day.text} ${day.music.title ?? ''}`.toLocaleLowerCase('ru').includes(query));
+  $('days').replaceChildren(...list.map((day) => card(day, number.get(day.id))));
+  const own = days.filter((day) => !day.example).length;
+  $('feed-count').textContent = `${days.length} ${plural(days.length, 'день', 'дня', 'дней')} · своих ${own}`;
+  show($('feed-status'), storeError ? 'Хранилище браузера недоступно — примеры работают, но новые дни не сохранятся.' : list.length ? '' : filter === 'mine' && !own ? 'Здесь появятся ваши дни. Нажмите «Записать день».' : 'Ничего не нашлось.');
+}
+
+function plural(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function renderSystem() {
+  $('constants').replaceChildren(...CONSTANTS.map((text) => node('li', '', text)));
+  $('techniques').replaceChildren(...Object.values(TECHNIQUES).map((t) => {
+    const item = node('li', 'technique');
+    item.append(node('h4', '', t.name), node('p', 'technique-mood', `Когда: ${t.mood}`), node('p', '', t.why), node('p', 'muted small', `Референсы: ${t.references}. Голос: ${t.voice}.`));
+    return item;
+  }));
+  $('song-genre').append(...Object.entries(GENRES).map(([id, genre]) => { const option = node('option', '', genre.label); option.value = id; return option; }));
+}
+
+// ——— Hero: the newest page plays silently ———
+
+const hero = { painter: null, frame: 0, start: 0, id: null };
+
+async function renderHero() {
+  const day = [...days].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created)[0];
+  if (!day || hero.id === day.id) return;
+  hero.id = day.id;
+  cancelAnimationFrame(hero.frame);
+  hero.painter = await createPainter($('hero-canvas'), day, await imagesFor(day), { number: numbers().get(day.id) });
+  const caption = $('hero-caption');
+  caption.replaceChildren(node('span', '', `Папка «${day.folder}»`), node('span', 'muted', ` · ${TECHNIQUES[day.design.technique].name}`));
+  $('hero-page').onclick = () => openViewer(day);
+  hero.start = performance.now();
+  const loop = (now) => {
+    const time = reduceMotion.matches ? posterTime(day.design) : (now - hero.start) % hero.painter.duration;
+    hero.painter.draw(time);
+    if (!reduceMotion.matches) hero.frame = requestAnimationFrame(loop);
+  };
+  hero.frame = requestAnimationFrame(loop);
+}
+
+// ——— Editor ———
+
+function songSource() {
+  return form.elements['song-source'].value;
 }
 
 function setSongSource() {
-  const isLink = form.elements['song-source'].value === 'link';
-  $('link-group').hidden = !isLink;
-  $('upload-group').hidden = isLink;
-  $('entry-audio').disabled = isLink;
-  for (const id of ['song-link', 'song-tempo', 'song-energy']) $(id).disabled = !isLink;
+  const link = songSource() === 'link';
+  $('song-link-group').hidden = !link;
+  $('song-file-group').hidden = link;
 }
 
-function clearPhotoPreview() {
+function clearPreview() {
   for (const url of previewUrls) URL.revokeObjectURL(url);
   previewUrls = [];
-  $('photo-selection').replaceChildren();
-  $('photo-selection').hidden = true;
+  $('photo-preview').replaceChildren();
+  $('photo-preview').hidden = true;
 }
 
 function openEditor() {
+  if (busy) return;
   form.reset();
-  $('memory-date').value = localDate();
-  setSongSource();
-  clearPhotoPreview();
+  const now = new Date();
+  $('day-date').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   selectedPhotos = [];
-  showMessage($('form-error'), '');
+  clearPreview();
+  setSongSource();
+  show($('form-error'), '');
+  show($('form-progress'), '');
   editor.showModal();
-  $('entry-text').focus();
+  $('day-text').focus();
 }
 
 function selectPhotos() {
-  clearPhotoPreview();
-  const files = [...photosInput.files];
-  const error = files.length > MAX_PHOTOS ? 'Choose up to six photos.' : files.some((photo) => photo.size > MAX_PHOTO_SIZE) ? 'Each photo must be 12 MB or smaller.' : '';
+  clearPreview();
+  const files = [...$('day-photos').files];
+  const error = files.length > MAX_PHOTOS ? 'Можно до шести фотографий.' : files.some((file) => file.size > MAX_PHOTO_SIZE) ? 'Каждое фото — до 15 МБ.' : '';
   selectedPhotos = error ? [] : files;
-  if (error) photosInput.value = '';
-  showMessage($('form-error'), error);
+  if (error) $('day-photos').value = '';
+  show($('form-error'), error);
   for (const file of selectedPhotos) {
     const image = node('img');
     image.alt = file.name;
     image.src = URL.createObjectURL(file);
     previewUrls.push(image.src);
-    $('photo-selection').append(image);
+    $('photo-preview').append(image);
   }
-  $('photo-selection').hidden = !selectedPhotos.length;
+  $('photo-preview').hidden = !selectedPhotos.length;
 }
 
-async function createMemory(event) {
+function songDetails() {
+  const year = Number.parseInt($('song-year').value, 10);
+  return {
+    title: $('song-title').value.trim(),
+    genre: $('song-genre').value || null,
+    year: year >= 1900 && year <= 2030 ? year : null,
+  };
+}
+
+async function createDay(event) {
   event.preventDefault();
-  if (saving) return;
-  const text = $('entry-text').value.trim();
-  if (!text || !selectedPhotos.length) {
-    showMessage($('form-error'), 'Write about the day and attach at least one photo.');
+  if (busy) return;
+  const text = $('day-text').value.trim();
+  const date = $('day-date').value;
+  const progress = $('form-progress');
+  if (!date || !text || !selectedPhotos.length) {
+    show($('form-error'), 'Нужны дата, несколько слов о дне и хотя бы одно фото.');
     return;
   }
-  const button = $('create-memory');
-  const date = $('memory-date').value;
-  const files = [...selectedPhotos];
-  const source = form.elements['song-source'].value;
-  saving = true;
-  button.disabled = true;
-  button.textContent = 'Composing…';
-  showMessage($('form-error'), '');
+  const details = songDetails();
+  let music;
   try {
-    let music;
-    if (source === 'link') {
-      const link = safeLink($('song-link').value);
-      music = { source, link, name: new URL(link).hostname, bpm: Number($('song-tempo').value), energy: Number($('song-energy').value) };
-    } else {
-      const file = $('entry-audio').files[0];
-      if (!file || file.size > MAX_AUDIO_SIZE) throw new Error('Choose an audio file of up to 20 MB.');
-      music = { ...await analyzeAudio(file), name: file.name, source, blob: file };
+    if (songSource() === 'link') {
+      const url = new URL($('song-link').value.trim());
+      if (url.protocol !== 'https:' || url.username || url.password) throw new Error();
+      if (!$('song-pace').value || !$('song-energy').value) {
+        show($('form-error'), 'Опишите песню по ссылке: выберите темп и энергию.');
+        return;
+      }
+      music = { source: 'link', link: url.href, name: url.hostname.replace(/^www\./, ''), ...details,
+        ...describedMusic({ pace: $('song-pace').value, energy: $('song-energy').value, mode: $('song-mode').value, genre: details.genre, year: details.year }) };
     }
-    const photo = combinePalettes(await Promise.all(files.map(readPalette)));
-    const day = {
-      id: crypto.randomUUID(), date, created: Date.now(), text,
-      photos: files.map((file) => ({ name: file.name, blob: file })), photo, music,
-      design: compose({ text, photo, music, photoCount: files.length }),
-    };
-    await saveDay(day);
-    storeError = false;
+  } catch {
+    show($('form-error'), 'Нужна публичная ссылка, начинающаяся с https://');
+    return;
+  }
+  const file = $('song-file').files[0];
+  if (!music && (!file || file.size > MAX_AUDIO_SIZE)) {
+    show($('form-error'), file ? 'Аудиофайл больше 25 МБ.' : 'Добавьте песню: файл или ссылку.');
+    return;
+  }
+  busy = true;
+  const button = $('create-day');
+  button.disabled = true;
+  show($('form-error'), '');
+  try {
+    show(progress, 'Читаю запись и смотрю фотографии…');
+    const images = await Promise.all(selectedPhotos.map(loadImage));
+    const photoReadings = images.map(readImage);
+    if (!music) {
+      show(progress, 'Слушаю песню: темп, энергия, лад…');
+      const measured = await analyzeAudio(file);
+      music = { source: 'file', name: file.name, blob: file, ...details, title: details.title || file.name.replace(/\.[^.]+$/, ''), ...measured };
+    }
+    show(progress, 'Собираю страницу дня…');
+    const id = crypto.randomUUID();
+    const day = buildDay({ id, date, text, photos: selectedPhotos.map((photo) => ({ name: photo.name, blob: photo })), photoReadings, music });
+    imageCache.set(id, Promise.resolve(images));
     days.push(day);
-    $('entry-filter').value = 'all';
+    day.poster = await posterBlob(day);
+    try {
+      await saveDay(day);
+      storeError = false;
+    } catch (error) {
+      days = days.filter((entry) => entry.id !== id);
+      throw error.name === 'QuotaExceededError' ? new Error('Хранилище браузера заполнено. Попробуйте фото поменьше или короче трек.') : error;
+    }
     editor.close();
-    renderJournal();
+    $('feed-filter').value = 'all';
+    technique = 'all';
+    renderChips();
+    renderFeed();
+    renderHero();
     openViewer(day);
   } catch (error) {
-    showMessage($('form-error'), error.name === 'QuotaExceededError' ? 'Your browser storage is full. Try smaller photos or a shorter audio file.' : error.message || 'Could not save this memory.');
+    show($('form-error'), error.message || 'Не получилось сохранить день.');
   } finally {
-    saving = false;
+    busy = false;
     button.disabled = false;
-    button.textContent = 'Create memory';
+    show(progress, '');
   }
 }
 
-function fillRecipe(day) {
-  const { design, music, photo, photos } = day;
-  const textValue = design.textCue ? `“${design.textCue}” suggests ${moods[design.mood].label.toLowerCase()} treatment` : 'A quiet treatment for an open-ended entry';
-  const bpm = music.bpm == null ? 'No steady beat detected' : music.source === 'link' ? `Described pace · about ${music.bpm} BPM` : `About ${music.bpm} BPM`;
-  const entries = [
-    ['Text', `${textValue}, with ${moods[design.mood].motif}.`],
-    ['Photos', `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} · the dominant color (${photo.color.map((value) => value.toString(16).padStart(2, '0')).join('').toUpperCase()}) blends into the caption and tonal grade.`],
-    ['Music', `${music.name} · ${bpm} · ${Math.round(music.energy * 100)}% energy.`],
-    ['Timing', `${(design.seconds / design.shotCount).toFixed(1)} sec per frame · ${design.crossfade} ms dissolve.`],
-  ];
-  $('memory-recipe').replaceChildren(...entries.flatMap(([term, value]) => [node('dt', '', term), node('dd', '', value)]));
+// ——— Viewer ———
+
+function stopVoice() {
+  view.stopVoice?.();
+  view.stopVoice = null;
+  view.voiceOn = false;
+  $('voice-day').setAttribute('aria-pressed', 'false');
+  $('voice-day').textContent = 'Озвучка';
+  audio.volume = 1;
 }
 
-function activateShot(index) {
-  for (const shot of shots) shot.className = 'shot';
-  if (shotIndex !== index) shots[shotIndex].classList.add('previous');
-  shots[index].classList.add('active');
-  shotIndex = index;
-  const { design } = activeDay;
-  scene.style.setProperty('--scene-motion', framing(index, design.motion).motion);
-  const captions = design.captions ?? [design.phrase];
-  const caption = captions[Math.floor(index * captions.length / shots.length)];
-  const phrase = $('scene-phrase');
-  if (phrase.textContent !== caption) {
-    phrase.textContent = caption;
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      phrase.animate([{ opacity: 0.45 }, { opacity: 1 }], Math.min(420, design.crossfade));
-    }
-  }
+function toggleVoice() {
+  if (view.voiceOn) { stopVoice(); return; }
+  const day = view.day;
+  view.stopVoice = speak(day.text, day.design.voice, day.reading.lang, () => { if (view.day === day) stopVoice(); });
+  if (!view.stopVoice) { show($('viewer-status'), 'Озвучка недоступна в этом браузере.'); return; }
+  view.voiceOn = true;
+  audio.volume = 0.35;
+  $('voice-day').setAttribute('aria-pressed', 'true');
+  $('voice-day').textContent = 'Остановить голос';
 }
 
-function openViewer(day, autoPlay = false) {
-  activeDay = day;
-  const { design, music } = day;
-  const date = $('viewer-date');
-  date.dateTime = day.date;
-  date.textContent = dateLabel(day.date, dateFormat);
-  $('viewer-title').textContent = design.title;
-  $('scene-phrase').textContent = design.phrase;
-  $('original-entry').textContent = day.text;
-  fillRecipe(day);
-  for (const details of viewer.querySelectorAll('details')) details.open = false;
-  scene.style.setProperty('--scene-shadow', `rgb(${design.shadow.join(' ')} / .93)`);
-  scene.style.setProperty('--scene-accent', `rgb(${design.accent.join(' ')})`);
-  scene.style.setProperty('--scene-zoom', String(design.zoom));
-  scene.style.setProperty('--scene-saturation', String(design.saturation));
-  scene.style.setProperty('--scene-brightness', String(design.brightness));
-  scene.style.setProperty('--scene-fade', `${design.crossfade}ms`);
-  scene.style.setProperty('--shot-ms', `${design.seconds * 1000 / design.shotCount}ms`);
-  shots = Array.from({ length: design.shotCount }, (_, index) => {
-    const image = imageFor(day.photos[index % day.photos.length], 'shot');
-    image.style.objectPosition = framing(index, design.motion).position;
-    return image;
-  });
-  $('shot-images').replaceChildren(...shots);
-  shotIndex = 0;
-  activateShot(0);
-  elapsed = 0;
-  $('scene-progress').style.transform = 'scaleX(0)';
-  $('play-label').textContent = 'Play memory';
-  const linked = music.source === 'link';
-  soundToggle.hidden = linked;
-  $('song-open').hidden = !linked;
-  if (linked) $('song-open').href = music.link;
-  else {
-    soundtrack.src = mediaUrl(music);
-    soundtrack.muted = mute;
-  }
-  soundToggle.textContent = mute ? 'Unmute' : 'Mute';
-  soundToggle.setAttribute('aria-pressed', String(mute));
-  showMessage(viewerMessage, '');
-  viewer.showModal();
-  if (autoPlay) togglePlayback();
-}
-
-function pausePlayback(label = 'Resume memory') {
-  playing = false;
-  cancelAnimationFrame(frame);
-  soundtrack.pause();
-  scene.classList.add('is-paused');
-  $('play-label').textContent = label;
-}
-
-function tick(now) {
-  if (!playing) return;
-  if (last) elapsed += now - last;
-  last = now;
-  const duration = activeDay.design.seconds * 1000;
-  const fraction = Math.min(1, elapsed / duration);
-  const index = Math.min(shots.length - 1, Math.floor(fraction * shots.length));
-  if (index !== shotIndex) activateShot(index);
-  $('scene-progress').style.transform = `scaleX(${fraction})`;
-  if (fraction >= 1) pausePlayback('Replay memory');
-  else frame = requestAnimationFrame(tick);
-}
-
-function togglePlayback() {
-  if (playing) {
-    pausePlayback();
+function paint(now) {
+  if (!view.playing) return;
+  const time = now - view.start;
+  view.painter.draw(time);
+  if (time >= view.painter.duration) {
+    stopPlayback('↻ Ещё раз');
     return;
   }
-  if (elapsed >= activeDay.design.seconds * 1000) {
-    elapsed = 0;
-    scene.classList.remove('playing');
-    void scene.offsetWidth;
-    activateShot(0);
-    if (soundtrack.src) soundtrack.currentTime = 0;
-  }
-  last = 0;
-  playing = true;
-  scene.classList.add('playing');
-  scene.classList.remove('is-paused');
-  $('play-label').textContent = 'Pause';
-  if (activeDay.music.source !== 'link') soundtrack.play().catch(() => {
-    if (playing && viewer.open) showMessage(viewerMessage, 'Sound couldn’t start. Tap Pause, then Resume memory to retry.');
-  });
-  frame = requestAnimationFrame(tick);
+  view.frame = requestAnimationFrame(paint);
 }
 
-async function downloadMemory() {
-  const button = $('export-memory');
+function stopPlayback(label = '▶ Смотреть') {
+  view.playing = false;
+  cancelAnimationFrame(view.frame);
+  audio.pause();
+  $('play-day').textContent = label;
+}
+
+function startPlayback() {
+  if (view.playing) { stopPlayback('▶ Смотреть'); return; }
+  view.playing = true;
+  view.start = performance.now();
+  $('play-day').textContent = '❚❚ Стоп';
+  if (view.day.music.source !== 'link') {
+    audio.currentTime = 0;
+    audio.play().catch((error) => { if (error.name !== 'AbortError' && view.playing) show($('viewer-status'), 'Звук не запустился. Нажмите «Стоп», затем «Смотреть».'); });
+  }
+  view.frame = requestAnimationFrame(paint);
+}
+
+let audioUrl = null;
+
+async function openViewer(day) {
+  if (viewer.open) closeViewer();
+  view.day = day;
+  const { design, music } = day;
+  $('viewer-date').textContent = `№${String(numbers().get(day.id)).padStart(2, '0')} · ${dateLine(day.date)}`;
+  $('viewer-title').textContent = design.title;
+  $('viewer-folder').textContent = day.folder;
+  $('viewer-text').textContent = day.text;
+  const t = TECHNIQUES[design.technique];
+  $('viewer-technique').textContent = `${t.name} · ${t.short}`;
+  $('viewer-why').textContent = t.why;
+  $('viewer-references').textContent = `Референсы: ${t.references}`;
+  $('viewer-reasons').replaceChildren(...design.reasons.flatMap((reason) => {
+    const dd = node('dd');
+    dd.append(node('span', 'cause', reason.cause), node('span', 'effect', reason.effect));
+    return [node('dt', '', reason.input), dd];
+  }));
+  $('delete-day').hidden = Boolean(day.example);
+  $('voice-day').hidden = !canSpeak();
+  const linked = music.source === 'link';
+  $('open-song').hidden = !linked;
+  $('mute-day').hidden = linked;
+  if (linked) $('open-song').href = music.link;
+  else {
+    audioUrl = music.blob ? URL.createObjectURL(music.blob) : sampleUrl(music.path);
+    audio.src = audioUrl;
+    audio.loop = true;
+    audio.muted = view.muted;
+  }
+  $('save-video').disabled = !videoType();
+  $('save-video').checked = Boolean(videoType());
+  show($('viewer-status'), '');
+  $('play-day').textContent = '▶ Смотреть';
+  viewer.showModal();
+  const canvas = $('viewer-canvas');
+  const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id) });
+  if (view.day !== day) return;
+  view.painter = painter;
+  painter.draw(posterTime(design));
+}
+
+function closeViewer() {
+  stopPlayback();
+  stopVoice();
+  audio.removeAttribute('src');
+  audio.load();
+  if (audioUrl?.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
+  audioUrl = null;
+  view.day = null;
+  view.painter = null;
+  if (viewer.open) viewer.close();
+}
+
+async function mediaBytes(media) {
+  if (media.blob) return media.blob.arrayBuffer();
+  const response = await fetch(sampleUrl(media.path));
+  return response.arrayBuffer();
+}
+
+async function saveFolder() {
+  const day = view.day;
+  if (!day || busy) return;
+  const status = $('viewer-status');
+  const button = $('save-day');
+  let parent = null;
+  if ('showDirectoryPicker' in window) {
+    try {
+      parent = await window.showDirectoryPicker({ id: 'ton-dnya', mode: 'readwrite', startIn: 'documents' });
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      parent = null;
+    }
+  }
+  busy = true;
   button.disabled = true;
   try {
-    const { blob, name } = await exportDay(activeDay, assetUrl);
-    const url = URL.createObjectURL(blob);
-    const link = node('a');
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    const wasPlaying = view.playing;
+    if (wasPlaying) stopPlayback();
+    let video = null;
+    if ($('save-video').checked && videoType()) {
+      const bytes = day.music.source === 'link' ? null : await mediaBytes(day.music);
+      video = await recordMemory(day, await imagesFor(day), bytes, numbers().get(day.id), (fraction) => {
+        show(status, `Записываю видео страницы: ${Math.round(fraction * 100)}% — не закрывайте вкладку`);
+      });
+    }
+    show(status, 'Собираю папку…');
+    const files = await folderFiles(day, { video, poster: await posterBlob(day), assetUrl: sampleUrl });
+    if (parent) {
+      await writeFolder(parent, day.folder, files);
+      show(status, `Папка «${day.folder}» сохранена: ${Object.keys(files).length} файлов.`);
+    } else {
+      const blob = await zipFolder(day.folder, files);
+      const url = URL.createObjectURL(blob);
+      const link = node('a');
+      link.href = url;
+      link.download = `${day.folder}.zip`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      show(status, `Папка «${day.folder}» скачана архивом: ${Object.keys(files).length} файлов.`);
+    }
+    if (view.painter) view.painter.draw(posterTime(day.design));
   } catch (error) {
-    showMessage(viewerMessage, error.message || 'Could not download this memory.');
+    show(status, error.message || 'Не получилось сохранить папку.');
   } finally {
+    busy = false;
     button.disabled = false;
   }
 }
 
-for (const button of document.querySelectorAll('.new-memory')) button.addEventListener('click', openEditor);
-for (const button of document.querySelectorAll('.close-editor')) button.addEventListener('click', () => { if (!saving) editor.close(); });
-editor.addEventListener('cancel', (event) => { if (saving) event.preventDefault(); });
-editor.addEventListener('close', clearPhotoPreview);
-form.addEventListener('submit', createMemory);
-for (const radio of form.elements['song-source']) radio.addEventListener('change', setSongSource);
-photosInput.addEventListener('change', selectPhotos);
-$('entry-filter').addEventListener('change', renderArchive);
-$('close-viewer').addEventListener('click', () => viewer.close());
-$('play-scene').addEventListener('click', togglePlayback);
-$('export-memory').addEventListener('click', downloadMemory);
-soundToggle.addEventListener('click', () => {
-  mute = !mute;
-  soundtrack.muted = mute;
-  soundToggle.textContent = mute ? 'Unmute' : 'Mute';
-  soundToggle.setAttribute('aria-pressed', String(mute));
-});
-viewer.addEventListener('close', () => {
-  pausePlayback();
-  scene.classList.remove('playing', 'is-paused');
-  soundtrack.removeAttribute('src');
-  soundtrack.load();
-  activeDay = null;
-});
+async function removeDay() {
+  const day = view.day;
+  if (!day || day.example || !confirm(`Удалить «${day.design.title}» из дневника? Это нельзя отменить.`)) return;
+  await deleteDay(day.id);
+  days = days.filter((entry) => entry.id !== day.id);
+  posters.delete(day.id);
+  imageCache.delete(day.id);
+  closeViewer();
+  hero.id = null;
+  renderFeed();
+  renderHero();
+}
 
-renderJournal();
-fetchDays().then((saved) => {
-  const currentIds = new Set(days.map((day) => day.id));
-  days.push(...saved.filter((day) => !currentIds.has(day.id)));
-  if (saved.length) renderJournal();
-}).catch(() => {
-  storeError = true;
-  renderArchive();
+// ——— Wiring ———
+
+for (const button of document.querySelectorAll('.new-day')) button.addEventListener('click', openEditor);
+for (const button of document.querySelectorAll('.close-editor')) button.addEventListener('click', () => { if (!busy) editor.close(); });
+editor.addEventListener('cancel', (event) => { if (busy) event.preventDefault(); });
+editor.addEventListener('close', clearPreview);
+form.addEventListener('submit', createDay);
+for (const radio of form.elements['song-source']) radio.addEventListener('change', setSongSource);
+$('day-photos').addEventListener('change', selectPhotos);
+$('feed-filter').addEventListener('change', renderFeed);
+$('feed-search').addEventListener('input', renderFeed);
+$('close-viewer').addEventListener('click', closeViewer);
+viewer.addEventListener('close', () => { if (view.day) closeViewer(); });
+viewer.addEventListener('cancel', (event) => { if (busy) event.preventDefault(); });
+$('play-day').addEventListener('click', startPlayback);
+$('voice-day').addEventListener('click', toggleVoice);
+$('mute-day').addEventListener('click', () => {
+  view.muted = !view.muted;
+  audio.muted = view.muted;
+  $('mute-day').setAttribute('aria-pressed', String(view.muted));
+  $('mute-day').textContent = view.muted ? 'Со звуком' : 'Без звука';
 });
+$('save-day').addEventListener('click', saveFolder);
+$('delete-day').addEventListener('click', removeDay);
+$('hero-page').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('hero-page').click(); });
+
+async function start() {
+  renderSystem();
+  renderChips();
+  await loadFonts();
+  const saved = fetchDays().catch(() => { storeError = true; return []; });
+  const samples = await Promise.all(SAMPLES.map((sample) => sampleDay(sample).catch((error) => { console.error(sample.id, error); return null; })));
+  days = [...samples.filter(Boolean), ...await saved];
+  document.body.dataset.ready = 'true';
+  renderFeed();
+  renderHero();
+}
+
+start();

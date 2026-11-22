@@ -3,15 +3,12 @@ let database;
 function openDatabase() {
   if (!database) {
     database = new Promise((resolve, reject) => {
-      const request = indexedDB.open('afterimage-journal', 1);
+      const request = indexedDB.open('ton-dnya', 1);
       request.onupgradeneeded = () => request.result.createObjectStore('days', { keyPath: 'id' });
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(new Error('Close other open copies of the journal to continue.'));
-    }).catch((error) => {
-      database = null;
-      throw error;
-    });
+      request.onblocked = () => reject(new Error('Закройте другие вкладки с дневником.'));
+    }).catch((error) => { database = null; throw error; });
   }
   return database;
 }
@@ -28,3 +25,4 @@ async function access(mode, operation) {
 
 export const fetchDays = () => access('readonly', (store) => store.getAll());
 export const saveDay = (day) => access('readwrite', (store) => store.put(day));
+export const deleteDay = (id) => access('readwrite', (store) => store.delete(id));
