@@ -40,8 +40,14 @@ async function createDay(page, { music }) {
   await page.getByRole('button', { name: 'Записать день' }).first().click();
   await page.getByLabel('Как прошёл день?').fill(STORY);
   await page.locator('#day-photos').setInputFiles(join(SAMPLES, 'last-bus.webp'));
-  if (music.file) await page.locator('#song-file').setInputFiles(join(SAMPLES, music.file));
-  else {
+  if (music.file) {
+    await page.locator('#song-file').setInputFiles(join(SAMPLES, music.file));
+    // The editor reads the entry live: folder name, mood words and the measured song before saving.
+    await page.locator('#live-music').filter({ hasText: 'BPM' }).waitFor({ timeout: 20000 });
+    assert.match(await page.locator('#live-folder').innerText(), /Вечер в автобусе под дождём$/);
+    assert.match(await page.locator('#live-text').innerText(), /«/);
+    assert.equal(await page.locator('#live-photo .swatch').count() > 0, true);
+  } else {
     await page.getByRole('radio', { name: 'Ссылка' }).check();
     await page.getByLabel('Ссылка на песню').fill(music.link);
     await page.getByLabel('Темп').selectOption(music.pace);
@@ -124,7 +130,33 @@ async function main() {
   assert.equal(await page.getByRole('link', { name: 'Открыть песню ↗' }).getAttribute('href'), 'https://example.com/team-song');
   await page.getByRole('button', { name: 'Закрыть день' }).click();
 
-  // 5. Reload: both own days remain in the archive and reopen.
+  // 5. Same saved day, another song: a temporary preview. The office day crosses into another technique,
+  //    and the folder saved during the preview still holds the saved song and design.
+  await page.locator('.day-button', { hasText: 'Ночь в офисе перед сдачей' }).click();
+  await page.locator('#play-day:not([disabled])').waitFor();
+  assert.match(await page.locator('#viewer-technique').innerText(), /Линии и круги/i);
+  await page.locator('.compare-option', { hasText: '«Берег»' }).click();
+  await page.locator('#play-day:not([disabled])').waitFor();
+  assert.match(await page.locator('#viewer-technique').innerText(), /Тушь и воздух/i);
+  assert.match(await page.locator('#compare-note').innerText(), /остаётся своя песня/);
+  assert.ok(await page.locator('#viewer-stage').evaluate((stage) => stage.classList.contains('is-preview')));
+  assert.match(await page.locator('#soundtrack').getAttribute('src'), /coast\.mp3$/);
+  await page.getByLabel('с видео').uncheck();
+  const previewSave = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Сохранить папку дня' }).click();
+  const previewZip = unzipSync(new Uint8Array(readFileSync(await (await previewSave).path())));
+  const previewRecord = JSON.parse(strFromU8(previewZip[Object.keys(previewZip).find((name) => name.endsWith('/day.json'))]));
+  assert.equal(previewRecord.design.technique, 'kandinsky');
+  assert.ok(Object.keys(previewZip).some((name) => name.endsWith('/song.mp3')));
+  assert.equal(previewRecord.inputs.music.bpm, 132);
+  await page.getByRole('button', { name: 'Закрыть день' }).click();
+  await page.locator('.day-button', { hasText: 'Ночь в офисе перед сдачей' }).click();
+  await page.locator('#play-day:not([disabled])').waitFor();
+  assert.match(await page.locator('#viewer-technique').innerText(), /Линии и круги/i);
+  assert.equal(await page.locator('.compare-option[aria-pressed=true] .compare-name').innerText(), 'Своя песня');
+  await page.getByRole('button', { name: 'Закрыть день' }).click();
+
+  // 6. Reload: both own days remain in the archive and reopen.
   await page.reload();
   await page.waitForSelector('body[data-ready=true]');
   await page.getByLabel('Показать').selectOption('mine');
@@ -136,7 +168,7 @@ async function main() {
   assert.deepEqual(errors, []);
   await context.close();
 
-  // 6. Phone layout.
+  // 7. Phone layout.
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   await phone.goto(BASE);
   await phone.waitForSelector('body[data-ready=true]', { timeout: 60000 });

@@ -68,7 +68,8 @@ export function moodOf({ reading, photo, music }) {
   const photoValence = clamp(photo.warmth * 0.6 + (photo.light - 0.45) * 1.2, -1, 1) * 0.5;
   const genre = GENRES[music.genre];
   const musicArousal = clamp(tempoArousal(music.bpm) * 0.55 + (music.energy - 0.4) * 1.6 * 0.45, -1, 1);
-  const textWeight = reading.hits.length ? 0.5 : 0.2;
+  // Pace is mostly heard: tempo and energy carry 65% of it, the words of the entry 35%.
+  const textWeight = reading.hits.length ? 0.35 : 0.15;
   const valence = clamp(0.55 * reading.valence + 0.3 * modeValence + 0.15 * photoValence + 0.1 * (genre?.warmth ?? 0), -1, 1);
   const arousal = clamp(textWeight * reading.arousal + (1 - textWeight) * musicArousal, -1, 1);
   const era = music.year ? clamp((2026 - music.year - 15) / 35, 0, 1) : 0;

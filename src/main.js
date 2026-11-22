@@ -6,11 +6,14 @@ import './style.css';
 import { folderFiles, writeFolder, zipFolder } from './folder.js';
 import { analyzeAudio, loadImage, MAX_AUDIO_SIZE, MAX_PHOTO_SIZE, MAX_PHOTOS, readImage } from './media.js';
 import { describedMusic, GENRES } from './music.js';
+import { createMoodMap } from './moodmap.js';
 import { buildDay } from './pipeline.js';
+import { combinePhotos } from './photo.js';
 import { createPainter, dateLine, loadFonts, posterTime } from './render.js';
 import { SAMPLES } from './samples.js';
 import { fetchDays, deleteDay, saveDay } from './store.js';
-import { CONSTANTS, TECHNIQUES } from './system.js';
+import { composeDay, CONSTANTS, TECHNIQUES } from './system.js';
+import { folderName, readText, titleFor } from './text.js';
 import { recordMemory, videoType } from './video.js';
 import { canSpeak, speak } from './voice.js';
 
@@ -31,7 +34,10 @@ let technique = 'all';
 const posters = new Map();
 const imageCache = new Map();
 
-const view = { day: null, painter: null, frame: 0, start: 0, playing: false, muted: false, stopVoice: null, voiceOn: false };
+// view.day is the saved record (archive, export); view.shown is what is on screen — the saved day or a
+// temporary preview of the same day with another song. A preview is never stored or exported.
+const view = { day: null, shown: null, painter: null, frame: 0, start: 0, playing: false, muted: false, stopVoice: null, voiceOn: false, token: 0 };
+const maps = {};
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -143,6 +149,8 @@ function renderFeed() {
     .filter((day) => technique === 'all' || day.design.technique === technique)
     .filter((day) => !query || `${day.design.title} ${day.text} ${day.music.title ?? ''}`.toLocaleLowerCase('ru').includes(query));
   $('days').replaceChildren(...list.map((day) => card(day, number.get(day.id))));
+  maps.diary ??= createMoodMap($('diary-map'), { label: 'Карта дневника: все дни' });
+  maps.diary.update({ days, onSelect: openViewer });
   const own = days.filter((day) => !day.example).length;
   $('feed-count').textContent = `${days.length} ${plural(days.length, 'день', 'дня', 'дней')} · своих ${own}`;
   show($('feed-status'), storeError ? 'Хранилище браузера недоступно — примеры работают, но новые дни не сохранятся.' : list.length ? '' : filter === 'mine' && !own ? 'Здесь появятся ваши дни. Нажмите «Записать день».' : 'Ничего не нашлось.');
@@ -191,6 +199,12 @@ async function renderHero() {
   const caption = $('hero-caption');
   caption.replaceChildren(node('span', '', `Папка «${day.folder}»`), node('span', 'muted', ` · ${TECHNIQUES[day.design.technique].name}`));
   $('hero-page').onclick = () => openViewer(day);
+  const behind = [...days].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created).slice(1, 3);
+  for (const [index, id] of ['hero-back-one', 'hero-back-two'].entries()) {
+    const image = $(id);
+    if (!behind[index]) { image.hidden = true; continue; }
+    posterFor(behind[index]).then((url) => { image.src = url; image.hidden = false; }).catch(() => {});
+  }
   hero.start = performance.now();
   hero.painter.draw(posterTime(day.design));
   hero.frame = 0;
@@ -200,7 +214,96 @@ async function renderHero() {
 new IntersectionObserver(([entry]) => { hero.visible = entry.isIntersecting; resumeHero(); }).observe($('hero-canvas'));
 document.addEventListener('visibilitychange', resumeHero);
 
-// ——— Editor ———
+// ——— Editor: the entry is read live, so the author sees the rules react while writing ———
+
+const live = { photos: null, music: null, musicFile: null, timer: 0 };
+const NEUTRAL_PHOTO = { palette: [[150, 140, 128]], light: 0.5, contrast: 0.2, warmth: 0, saturation: 0.3, count: 1 };
+const NEUTRAL_MUSIC = { bpm: null, energy: 0.4, mode: null, key: null, keyConfidence: 0 };
+const hex = (rgb) => `#${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+
+function linkMusic() {
+  if (songSource() !== 'link' || !$('song-pace').value || !$('song-energy').value) return null;
+  const details = songDetails();
+  return { source: 'link', name: 'ссылка', ...details, ...describedMusic({ pace: $('song-pace').value, energy: $('song-energy').value, mode: $('song-mode').value, genre: details.genre, year: details.year }) };
+}
+
+function updateLive() {
+  const text = $('day-text').value.trim();
+  const date = $('day-date').value || '2026-01-01';
+  maps.live ??= createMoodMap($('live-map'), { label: 'Настроение записи' });
+  if (!text) {
+    $('live-folder').textContent = 'Название появится, когда вы начнёте писать';
+    $('live-text').textContent = '—';
+    $('live-technique').textContent = '—';
+    maps.live.update({ days: [] });
+    return;
+  }
+  const reading = readText(text, date);
+  const music = songSource() === 'link' ? linkMusic() : live.music;
+  const photo = live.photos ? combinePhotos(live.photos) : NEUTRAL_PHOTO;
+  const design = composeDay({ text, date, reading, photo, music: { ...NEUTRAL_MUSIC, ...music, ...(music ? {} : songDetails()) }, photoCount: live.photos?.length ?? 1 });
+  $('live-folder').textContent = folderName(date, titleFor(reading));
+  $('live-text').textContent = reading.hits.length ? `«${reading.hits.slice(0, 4).join('», «')}»` : 'пока мало слов-настроений';
+  const complete = live.photos && music;
+  const technique = TECHNIQUES[design.technique];
+  $('live-technique').textContent = `${technique.name}${complete ? '' : ' — предварительно, ждём фото и песню'}`;
+  $('live-technique').classList.toggle('pending', !complete);
+  maps.live.update({ days: [], current: { id: 'live', design } });
+}
+
+function scheduleLive() {
+  clearTimeout(live.timer);
+  live.timer = setTimeout(updateLive, 120);
+}
+
+async function readLivePhotos(files) {
+  live.photos = null;
+  $('live-photo').textContent = files.length ? 'смотрю цвета…' : '—';
+  if (!files.length) { updateLive(); return; }
+  try {
+    const readings = (await Promise.all(files.map(loadImage))).map(readImage);
+    if (selectedPhotos !== files) return;
+    live.photos = readings;
+    const swatches = node('span', 'swatches');
+    for (const color of combinePhotos(readings).palette) {
+      const swatch = node('span', 'swatch');
+      swatch.style.background = hex(color);
+      swatch.title = hex(color).toUpperCase();
+      swatches.append(swatch);
+    }
+    $('live-photo').replaceChildren(swatches, ` ${files.length} ${plural(files.length, 'кадр', 'кадра', 'кадров')}`);
+  } catch (error) {
+    $('live-photo').textContent = error.message;
+  }
+  updateLive();
+}
+
+async function readLiveSong() {
+  const file = $('song-file').files[0];
+  $('song-picked').textContent = pickerText($('song-file'), 'Файл не выбран');
+  live.music = null;
+  live.musicFile = file ?? null;
+  if (!file) { $('live-music').textContent = '—'; updateLive(); return; }
+  if (file.size > MAX_AUDIO_SIZE) { $('live-music').textContent = 'файл больше 25 МБ'; updateLive(); return; }
+  $('live-music').textContent = 'слушаю: темп, энергия, лад…';
+  try {
+    const measured = await analyzeAudio(file);
+    if (live.musicFile !== file) return;
+    live.music = measured;
+    $('live-music').textContent = [measured.bpm ? `${measured.bpm} BPM` : 'ритм не найден', `энергия ${Math.round(measured.energy * 100)}%`, measured.key ?? 'лад не определён'].join(' · ');
+  } catch (error) {
+    $('live-music').textContent = error.message;
+  }
+  updateLive();
+}
+
+function describeLinkLive() {
+  const music = linkMusic();
+  if (songSource() === 'link') $('live-music').textContent = music ? `по описанию · ${music.bpm} BPM · энергия ${Math.round(music.energy * 100)}%${music.mode ? ` · ${music.mode === 'major' ? 'мажор' : 'минор'}` : ''}` : 'опишите темп и энергию';
+  else if (!live.musicFile) $('live-music').textContent = '—';
+  else if (live.music) $('live-music').textContent = [live.music.bpm ? `${live.music.bpm} BPM` : 'ритм не найден', `энергия ${Math.round(live.music.energy * 100)}%`, live.music.key ?? 'лад не определён'].join(' · ');
+  scheduleLive();
+}
 
 function songSource() {
   return form.elements['song-source'].value;
@@ -225,12 +328,25 @@ function openEditor() {
   const now = new Date();
   $('day-date').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   selectedPhotos = [];
+  live.photos = null;
+  live.music = null;
+  live.musicFile = null;
+  $('live-photo').textContent = '—';
+  $('live-music').textContent = '—';
+  $('photos-picked').textContent = 'Файлы не выбраны';
+  $('song-picked').textContent = 'Файл не выбран';
   clearPreview();
   setSongSource();
+  updateLive();
   show($('form-error'), '');
   show($('form-progress'), '');
   editor.showModal();
   $('day-text').focus();
+}
+
+function pickerText(input, empty) {
+  const files = [...input.files];
+  return files.length ? files.map((file) => file.name).join(', ') : empty;
 }
 
 function selectPhotos() {
@@ -248,6 +364,8 @@ function selectPhotos() {
     $('photo-preview').append(image);
   }
   $('photo-preview').hidden = !selectedPhotos.length;
+  $('photos-picked').textContent = pickerText($('day-photos'), 'Файлы не выбраны');
+  readLivePhotos(selectedPhotos);
 }
 
 function songDetails() {
@@ -301,7 +419,7 @@ async function createDay(event) {
     const photoReadings = images.map(readImage);
     if (!music) {
       show(progress, 'Слушаю песню: темп, энергия, лад…');
-      const measured = await analyzeAudio(file);
+      const measured = live.musicFile === file && live.music ? live.music : await analyzeAudio(file);
       music = { source: 'file', name: file.name, blob: file, ...details, title: details.title || file.name.replace(/\.[^.]+$/, ''), ...measured };
     }
     show(progress, 'Собираю страницу дня…');
@@ -347,7 +465,7 @@ function stopVoice() {
 function toggleVoice() {
   if (view.voiceOn) { stopVoice(); return; }
   const day = view.day;
-  view.stopVoice = speak(day.text, day.design.voice, day.reading.lang, () => { if (view.day === day) stopVoice(); });
+  view.stopVoice = speak(day.text, view.shown.design.voice, day.reading.lang, () => { if (view.day === day) stopVoice(); });
   if (!view.stopVoice) { show($('viewer-status'), 'Озвучка недоступна в этом браузере.'); return; }
   view.voiceOn = true;
   audio.volume = 0.35;
@@ -379,7 +497,7 @@ function startPlayback() {
   view.playing = true;
   view.start = performance.now();
   $('play-day').textContent = '❚❚ Стоп';
-  if (view.day.music.source !== 'link') {
+  if (view.shown.music.source !== 'link') {
     audio.currentTime = 0;
     audio.play().catch((error) => { if (error.name !== 'AbortError' && view.playing) show($('viewer-status'), 'Звук не запустился. Нажмите «Стоп», затем «Смотреть».'); });
   }
@@ -388,14 +506,47 @@ function startPlayback() {
 
 let audioUrl = null;
 
-async function openViewer(day) {
-  if (viewer.open) closeViewer();
-  view.day = day;
-  const { design, music } = day;
-  $('viewer-date').textContent = `№${String(numbers().get(day.id)).padStart(2, '0')} · ${dateLine(day.date)}`;
-  $('viewer-title').textContent = design.title;
-  $('viewer-folder').textContent = day.folder;
-  $('viewer-text').textContent = day.text;
+const shortSong = (music) => (music.title || music.name).split(' — ')[0].replace(/^«(.*)»$/, '$1');
+
+// The same saved day recomposed with another song: words, photos and date stay, the rules run again.
+function withSong(day, music) {
+  const design = composeDay({ text: day.text, date: day.date, reading: day.reading, photo: day.photo, music, photoCount: day.photos.length });
+  return { ...day, music, design, preview: true };
+}
+
+function compareOptions(day) {
+  const seen = new Set([day.music.path ?? day.music.link ?? day.music.name]);
+  const options = [{ id: 'own', label: 'Своя песня', meta: `«${shortSong(day.music)}»`, shown: day }];
+  for (const sample of days.filter((entry) => entry.example)) {
+    if (seen.has(sample.music.path)) continue;
+    seen.add(sample.music.path);
+    options.push({ id: sample.music.path, label: `«${shortSong(sample.music)}»`, meta: [sample.music.bpm && `${sample.music.bpm} BPM`, sample.music.mode === 'minor' ? 'минор' : sample.music.mode === 'major' ? 'мажор' : null].filter(Boolean).join(' · '), music: sample.music });
+  }
+  return options;
+}
+
+function renderCompare(day, activeId) {
+  $('compare-options').replaceChildren(...compareOptions(day).map((option) => {
+    const button = node('button', 'compare-option');
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(option.id === activeId));
+    button.append(node('span', 'compare-name', option.label), node('span', 'compare-meta', option.meta));
+    button.addEventListener('click', () => {
+      if (option.id === activeId) return;
+      const wasPlaying = view.playing;
+      showVersion(option.shown ?? withSong(day, option.music), option.id, wasPlaying);
+    });
+    return button;
+  }));
+}
+
+async function showVersion(shown, activeId = 'own', autoplay = false) {
+  const day = view.day;
+  const token = ++view.token;
+  stopPlayback();
+  view.shown = shown;
+  view.painter = null;
+  const { design, music } = shown;
   const t = TECHNIQUES[design.technique];
   $('viewer-technique').textContent = `${t.name} · ${t.short}`;
   $('viewer-why').textContent = t.why;
@@ -405,35 +556,57 @@ async function openViewer(day) {
     dd.append(node('span', 'cause', reason.cause), node('span', 'effect', reason.effect));
     return [node('dt', '', reason.input), dd];
   }));
-  $('delete-day').hidden = Boolean(day.example);
-  $('voice-day').hidden = !canSpeak();
+  const note = $('compare-note');
+  show(note, shown.preview ? `Предпросмотр с «${shortSong(music)}»: ${design.rhythm.sceneSeconds} с на кадр вместо ${day.design.rhythm.sceneSeconds} с, ${t.name.toLowerCase()}. В папке дня и архиве остаётся своя песня.` : '');
+  renderCompare(day, activeId);
+  maps.viewer?.update({ days: days.filter((entry) => entry.id !== day.id), current: { ...shown, id: day.id } });
   const linked = music.source === 'link';
   $('open-song').hidden = !linked;
   $('mute-day').hidden = linked;
-  if (linked) $('open-song').href = music.link;
-  else {
+  if (audioUrl?.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
+  audioUrl = null;
+  if (linked) {
+    $('open-song').href = music.link;
+    audio.removeAttribute('src');
+    audio.load();
+  } else {
     audioUrl = music.blob ? URL.createObjectURL(music.blob) : sampleUrl(music.path);
     audio.src = audioUrl;
     audio.loop = true;
     audio.muted = view.muted;
   }
+  const canvas = $('viewer-canvas');
+  canvas.setAttribute('aria-label', `Страница дня «${design.title}», ${t.name.toLowerCase()}. ${design.captions.join(' ')}`);
+  // Painting a page takes a moment; Play stays disabled until it is ready instead of drawing nothing.
+  $('play-day').disabled = true;
+  $('viewer-stage').setAttribute('aria-busy', 'true');
+  $('viewer-stage').classList.toggle('is-preview', Boolean(shown.preview));
+  const painter = await createPainter(canvas, shown, await imagesFor(day), { number: numbers().get(day.id), scale: screenScale(canvas) });
+  if (view.token !== token || view.day !== day) return;
+  view.painter = painter;
+  $('play-day').disabled = false;
+  $('viewer-stage').removeAttribute('aria-busy');
+  painter.draw(posterTime(design));
+  if (autoplay) startPlayback();
+}
+
+async function openViewer(day) {
+  if (viewer.open) closeViewer();
+  view.day = day;
+  $('viewer-date').textContent = `№${String(numbers().get(day.id)).padStart(2, '0')} · ${dateLine(day.date)}`;
+  $('viewer-title').textContent = day.design.title;
+  $('viewer-folder').textContent = day.folder;
+  $('viewer-text').textContent = day.text;
+  $('delete-day').hidden = Boolean(day.example);
+  $('voice-day').hidden = !canSpeak();
   $('save-video').disabled = !videoType();
   $('save-video').checked = Boolean(videoType());
   show($('viewer-status'), '');
   $('play-day').textContent = '▶ Смотреть';
   viewer.showModal();
   $('play-day').focus();
-  const canvas = $('viewer-canvas');
-  canvas.setAttribute('aria-label', `Страница дня «${design.title}», ${t.name.toLowerCase()}. ${design.captions.join(' ')}`);
-  // Painting a page takes a moment; Play stays disabled until it is ready instead of drawing nothing.
-  $('play-day').disabled = true;
-  $('viewer-stage').setAttribute('aria-busy', 'true');
-  const painter = await createPainter(canvas, day, await imagesFor(day), { number: numbers().get(day.id), scale: screenScale(canvas) });
-  if (view.day !== day) return;
-  view.painter = painter;
-  $('play-day').disabled = false;
-  $('viewer-stage').removeAttribute('aria-busy');
-  painter.draw(posterTime(design));
+  maps.viewer ??= createMoodMap($('viewer-map'), { label: 'Этот день на карте настроений' });
+  await showVersion(day);
 }
 
 function closeViewer() {
@@ -444,7 +617,9 @@ function closeViewer() {
   if (audioUrl?.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
   audioUrl = null;
   view.day = null;
+  view.shown = null;
   view.painter = null;
+  view.token++;
   if (viewer.open) viewer.close();
   resumeHero();
 }
@@ -498,7 +673,7 @@ async function saveFolder() {
       setTimeout(() => URL.revokeObjectURL(url), 60000);
       show(status, `Папка «${day.folder}» скачана архивом: ${Object.keys(files).length} файлов.`);
     }
-    if (view.painter) view.painter.draw(posterTime(day.design));
+    if (view.painter) view.painter.draw(posterTime(view.shown.design));
   } catch (error) {
     show(status, error.message || 'Не получилось сохранить папку.');
   } finally {
@@ -529,6 +704,11 @@ editor.addEventListener('close', clearPreview);
 form.addEventListener('submit', createDay);
 for (const radio of form.elements['song-source']) radio.addEventListener('change', setSongSource);
 $('day-photos').addEventListener('change', selectPhotos);
+$('day-text').addEventListener('input', scheduleLive);
+$('day-date').addEventListener('change', scheduleLive);
+$('song-file').addEventListener('change', readLiveSong);
+for (const id of ['song-pace', 'song-energy', 'song-mode', 'song-genre', 'song-year', 'song-link']) $(id).addEventListener('input', describeLinkLive);
+for (const radio of form.elements['song-source']) radio.addEventListener('change', describeLinkLive);
 $('feed-filter').addEventListener('change', renderFeed);
 $('feed-search').addEventListener('input', renderFeed);
 $('close-viewer').addEventListener('click', closeViewer);

@@ -70,3 +70,12 @@ test('the explanation never contradicts the chosen technique', () => {
     assert.equal(bright, technique === 'monet' || technique === 'seurat', `${technique}: ${cause}`);
   }
 });
+
+test('on a borderline day the song alone can move the page into another technique', () => {
+  const text = 'Ночь в офисе перед сдачей проекта. Кофе остыл, за окном неон.';
+  const slow = day(text, music('slow', 'soft', 'major')).design;
+  const fast = day(text, music('fast', 'intense', 'minor', { genre: 'electronic' })).design;
+  assert.equal(slow.title, fast.title);
+  assert.notEqual(slow.technique, fast.technique);
+  assert.equal(fast.technique, 'kandinsky');
+});

@@ -170,8 +170,8 @@ export function readText(text, date) {
   const season = firstLabel(tokens, SEASONS);
   return {
     lang,
-    valence: Number(clamp(valence / weight / 1.6, -1, 1).toFixed(3)),
-    arousal: Number(clamp((arousal + exclamations * 0.6) / weight / 1.6, -1, 1).toFixed(3)),
+    valence: Number(clamp(valence / weight / 2, -1, 1).toFixed(3)),
+    arousal: Number(clamp((arousal + exclamations * 0.6) / weight / 2, -1, 1).toFixed(3)),
     nostalgia: Number(clamp(nostalgia / 2.4, 0, 1).toFixed(3)),
     season: season ?? seasonFromDate(date),
     seasonFromText: Boolean(season),

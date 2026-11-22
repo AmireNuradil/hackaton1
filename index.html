@@ -32,7 +32,11 @@
           </div>
         </div>
         <figure class="hero-page" id="hero-page" tabindex="0" role="button" aria-label="Открыть последний день">
-          <div class="page-frame"><canvas id="hero-canvas" width="1080" height="1350" aria-hidden="true"></canvas></div>
+          <div class="hero-stack">
+            <img class="hero-back two" id="hero-back-two" alt="" hidden>
+            <img class="hero-back one" id="hero-back-one" alt="" hidden>
+            <div class="page-frame"><canvas id="hero-canvas" width="1080" height="1350" aria-hidden="true"></canvas></div>
+          </div>
           <figcaption id="hero-caption">Собираю страницы…</figcaption>
         </figure>
       </section>
@@ -61,6 +65,14 @@
 
       <section id="system" class="system shell" aria-labelledby="system-title">
         <div class="section-head"><h2 id="system-title">Как день становится страницей</h2></div>
+        <div class="diary-map">
+          <div id="diary-map"></div>
+          <div class="diary-map-copy">
+            <h3>Карта дневника</h3>
+            <p>Каждый день — точка на двух осях. <b>Окраска</b> складывается из слов записи, лада песни и теплоты фото. <b>Подвижность</b> — из слов действия, темпа и энергии песни. Зона, в которую попала точка, выбирает художественный приём; сильная ностальгия (кольцо вокруг точки) включает плёнку в любой зоне.</p>
+            <p class="muted">Нажмите на точку, чтобы открыть день. Поменяйте песню у дня в просмотре — и увидите, как точка переезжает в другую зону.</p>
+          </div>
+        </div>
         <div class="system-grid">
           <div>
             <h3>Постоянное</h3>
@@ -90,14 +102,20 @@
           <div><h2 id="editor-title">Новый день</h2><p class="muted">Расскажите, как он прошёл, — как близкому другу.</p></div>
           <button class="icon-button close-editor" type="button" aria-label="Закрыть"><span aria-hidden="true">×</span></button>
         </div>
+        <div class="editor-grid">
+        <div class="editor-fields">
         <div class="field"><label for="day-date">Дата</label><input id="day-date" type="date" required></div>
         <div class="field">
           <label for="day-text">Как прошёл день?</label>
           <textarea id="day-text" rows="5" maxlength="3000" required placeholder="Погода, свет, запахи, звуки, кто был рядом, мелочи, которые запомнились…"></textarea>
         </div>
         <div class="field">
-          <label for="day-photos">Фотографии <small>1–6</small></label>
-          <input id="day-photos" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required>
+          <span class="field-label" id="photos-label">Фотографии <small>1–6, JPG, PNG или WebP</small></span>
+          <div class="picker">
+            <input id="day-photos" class="picker-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" multiple required aria-labelledby="photos-label photos-picked">
+            <label for="day-photos" class="button quiet picker-button">Выбрать фото</label>
+            <span id="photos-picked" class="picker-name">Файлы не выбраны</span>
+          </div>
           <div id="photo-preview" class="photo-preview" hidden></div>
         </div>
         <fieldset class="field song">
@@ -107,8 +125,11 @@
             <label><input type="radio" name="song-source" value="link"> Ссылка</label>
           </div>
           <div id="song-file-group" class="field">
-            <label class="sr-only" for="song-file">Аудиофайл</label>
-            <input id="song-file" type="file" accept="audio/*">
+            <div class="picker">
+              <input id="song-file" class="picker-input" type="file" accept="audio/*" aria-label="Аудиофайл песни">
+              <label for="song-file" class="button quiet picker-button">Выбрать аудио</label>
+              <span id="song-picked" class="picker-name">Файл не выбран</span>
+            </div>
             <span class="note">Темп, энергия и лад будут измерены в браузере. До 25 МБ.</span>
           </div>
           <div id="song-link-group" hidden>
@@ -126,6 +147,19 @@
             <div class="field"><label for="song-year">Год</label><input id="song-year" type="number" min="1900" max="2030" placeholder="1957"></div>
           </div>
         </fieldset>
+        </div>
+        <aside class="live" aria-labelledby="live-title">
+          <p class="kicker" id="live-title">Так дневник прочитает день</p>
+          <p class="live-folder"><span class="folder-icon" aria-hidden="true"></span><span id="live-folder">Название появится, когда вы начнёте писать</span></p>
+          <div id="live-map" class="live-map"></div>
+          <dl class="live-readout">
+            <dt>Текст</dt><dd id="live-text">—</dd>
+            <dt>Фото</dt><dd id="live-photo">—</dd>
+            <dt>Песня</dt><dd id="live-music">—</dd>
+            <dt>Приём</dt><dd id="live-technique">—</dd>
+          </dl>
+        </aside>
+        </div>
         <p id="form-error" class="form-error" role="alert" hidden></p>
         <p id="form-progress" class="form-progress" role="status" hidden></p>
         <div class="dialog-actions">
@@ -155,6 +189,11 @@
             <button id="mute-day" class="button quiet" type="button" aria-pressed="false">Без звука</button>
             <a id="open-song" class="button quiet" href="#" target="_blank" rel="noopener noreferrer" hidden>Открыть песню ↗</a>
           </div>
+          <div class="compare">
+            <p class="kicker">Тот же день — другая песня</p>
+            <div id="compare-options" class="compare-options" role="group" aria-label="Песня для предпросмотра"></div>
+            <p id="compare-note" class="compare-note" role="status" hidden></p>
+          </div>
           <div class="save-row">
             <button id="save-day" class="button dark" type="button">Сохранить папку дня</button>
             <label class="check"><input id="save-video" type="checkbox" checked> с видео</label>
@@ -165,6 +204,10 @@
             <p id="viewer-why"></p>
             <p class="muted small" id="viewer-references"></p>
           </div>
+          <figure class="viewer-map">
+            <div id="viewer-map"></div>
+            <figcaption class="muted small">Большая точка — этот день, маленькие — остальные дни дневника. Зоны — правило выбора приёма.</figcaption>
+          </figure>
           <details open><summary>Почему этот день выглядит так</summary><dl id="viewer-reasons" class="reasons"></dl></details>
           <details><summary>Запись дня</summary><p id="viewer-text" class="entry-text"></p></details>
           <button id="delete-day" class="link-button" type="button" hidden>Удалить этот день</button>
